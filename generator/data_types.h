@@ -7,8 +7,8 @@ typedef int32_t VAL_t;
 
 // KEY
 typedef uint32_t KEY_t;
-#define KEY_MAX 4294967295;
-#define KEY_MIN 0;
+#define KEY_MAX 4294967295
+#define KEY_MIN 0
 #define GEN_RANDOM_KEY() rand() + rand();
 
 // PRINT PATTERNS
