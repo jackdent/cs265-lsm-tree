@@ -1,3 +1,15 @@
+/**
+ * ================================================
+ * = Harvard University | CS265 | Systems Project =
+ * ================================================
+ * ==========     LSM TREE DATA TYPES     =========
+ * ================================================
+ * Contact:
+ * ========
+ * - Kostas Zoumpatianos <kostas@seas.harvard.edu>
+ * - Michael Kester <kester@eecs.harvard.edu>
+ */
+
 #ifndef DATA_TYPES_H
 #define DATA_TYPES_H
 

@@ -1,5 +1,9 @@
+// CS265 logo (using: http://patorjk.com/software/taag)
+// - Kostas Zoumpatianos <kostas@seas.harvard.edu>
+
 #ifndef LOGO_H
 #define LOGO_H
+
 #define LOGO "\
  ____  ____       _       _______  ____   ____  _       _______     ______             \n\
 |_   ||   _|     / \\     |_   __ \\|_  _| |_  _|/ \\     |_   __ \\   |_   _ `.       \n\
