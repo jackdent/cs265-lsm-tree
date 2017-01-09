@@ -53,6 +53,7 @@ void evaluate_workload(char *filename) {
     KEY_t k;
     KEY_t k2;
     VAL_t v;    
+    char path[4096];
     
     FILE *f = fopen(filename, "r");
 
@@ -62,13 +63,13 @@ void evaluate_workload(char *filename) {
         switch(operation) {
             case 'p':
                 // Put value in array
-                fscanf(f, "%u %d", &k, &v);
+                fscanf(f, PUT_PATTERN_SCAN, &k, &v);
                 values[k] = v;
                 active[k] = 1;
                 break;
             case 'g':
                 // Get value from array
-                fscanf(f, "%u", &k);
+                fscanf(f, GET_PATTERN_SCAN, &k);
                 if(active[k]) {
                     printf("%d\n", values[k]);
                 }
@@ -78,12 +79,12 @@ void evaluate_workload(char *filename) {
                 break;
             case 'l':
                 // Load external file into array
-                fscanf(f, "%u", &k);
+                fscanf(f, "%s\n", path);
                 // TODO: ...
                 break;
             case 'r':
                 // Issue range query
-                fscanf(f, "%u %u", &k, &k2);
+                fscanf(f, RANGE_PATTERN_SCAN, &k, &k2);
                 // TODO: <= ??? or <
                 for(i=k; i<=k2; i++) {
                     if(active[i]) {
@@ -94,7 +95,7 @@ void evaluate_workload(char *filename) {
                 break;
             case 'd':
                 // Delete value from array
-                fscanf(f, "%u", &k);
+                fscanf(f, DELETE_PATTERN_SCAN, &k);
                 active[k] = 0;
                 break;
             default:
