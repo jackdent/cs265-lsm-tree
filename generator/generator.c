@@ -69,6 +69,7 @@ void initialize_settings(struct settings *s) {
  * i.e., all valid arguments.
  */
 void usage(char * binary) {
+    //fprintf(stderr, DASLAB_LOGO);
     fprintf(stderr, LOGO);
     fprintf(stderr, PRODUCT);
     fprintf(stderr, "Usage: %s\n\
