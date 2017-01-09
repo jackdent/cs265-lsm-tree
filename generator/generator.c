@@ -230,8 +230,6 @@ void generate_workload(struct settings *s) {
     int ranges_batch_size = s->ranges / s->puts_batches;
     int deletes_batch_size = s->deletes / s->puts_batches;
 
-    KEY_t min_key = KEY_MAX;
-    KEY_t max_key = KEY_MIN;
     for(i=0; i<s->puts_batches; i++) {
         ////////////////// PUTS //////////////////
         FILE *pf;
@@ -239,7 +237,7 @@ void generate_workload(struct settings *s) {
             char pfname[256];
             sprintf(pfname, "%d.dat", i); 
             pf = fopen(pfname, "wb");
-            printf("L %s\n", pfname);
+            printf("l %s\n", pfname);
         }
         for(j=0; j<puts_batch_size; j++) {
             if(i+j > s->puts) {
@@ -252,14 +250,6 @@ void generate_workload(struct settings *s) {
                 // Pick key and value
                 KEY_t k = puts_pool[i+j];
                 VAL_t v = GEN_RANDOM_VAL();
-                
-                // Update min, max keys
-                if(k < min_key) {
-                    min_key = k;
-                }
-                if(k > max_key) {
-                    max_key = k;
-                }
                 
                 // Write
                 if(s->external_puts) {

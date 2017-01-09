@@ -60,13 +60,13 @@ void evaluate_workload(char *filename) {
         char operation;
         fscanf(f, "%c", &operation);
         switch(operation) {
-            case 'P':
+            case 'p':
                 // Put value in array
                 fscanf(f, "%u %d", &k, &v);
                 values[k] = v;
                 active[k] = 1;
                 break;
-            case 'G':
+            case 'g':
                 // Get value from array
                 fscanf(f, "%u", &k);
                 if(active[k]) {
@@ -76,12 +76,12 @@ void evaluate_workload(char *filename) {
                     printf("\n");
                 }
                 break;
-            case 'L':
+            case 'l':
                 // Load external file into array
                 fscanf(f, "%u", &k);
                 // TODO: ...
                 break;
-            case 'R':
+            case 'r':
                 // Issue range query
                 fscanf(f, "%u %u", &k, &k2);
                 // TODO: <= ??? or <
@@ -92,7 +92,7 @@ void evaluate_workload(char *filename) {
                 }
                 printf("\n");
                 break;
-            case 'D':
+            case 'd':
                 // Delete value from array
                 fscanf(f, "%u", &k);
                 active[k] = 0;

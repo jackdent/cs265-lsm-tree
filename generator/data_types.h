@@ -17,16 +17,30 @@
 typedef int32_t VAL_t;
 #define GEN_RANDOM_VAL() rand() - rand();
 
-// KEY
-typedef uint32_t KEY_t;
-#define KEY_MAX 4294967295
-#define KEY_MIN 0
-#define GEN_RANDOM_KEY() rand() + rand();
+#ifdef UNSIGNED_KEYS
+    // KEY
+    typedef uint32_t KEY_t;
+    #define KEY_MAX 4294967295
+    #define KEY_MIN 0
+    #define GEN_RANDOM_KEY() rand() + rand();
 
-// PRINT PATTERNS
-#define PUT_PATTERN "P %u %d\n"
-#define GET_PATTERN "G %u\n"
-#define RANGE_PATTERN "R %u %u\n"
-#define DELETE_PATTERN "D %u\n"
+    // PRINT PATTERNS
+    #define PUT_PATTERN "p %u %d\n"
+    #define GET_PATTERN "g %u\n"
+    #define RANGE_PATTERN "r %u %u\n"
+    #define DELETE_PATTERN "d %u\n"
+#else
+    // KEY
+    typedef int32_t KEY_t;
+    #define KEY_MAX 2147483647
+    #define KEY_MIN -2147483647
+    #define GEN_RANDOM_KEY() rand() + rand();
+
+    // PRINT PATTERNS
+    #define PUT_PATTERN "p %d %d\n"
+    #define GET_PATTERN "g %d\n"
+    #define RANGE_PATTERN "r %d %d\n"
+    #define DELETE_PATTERN "d %d\n"
+#endif
 
 #endif
