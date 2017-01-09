@@ -21,3 +21,18 @@ ____  ____       _       _______  ____   ____  _       _______     ______
                         ( _.-'
 
 ```
+
+# Generator #
+
+
+```
+#!bash
+
+cd generator;
+
+make clean; make;
+
+./generator --help
+
+
+```
