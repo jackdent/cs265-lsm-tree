@@ -25,6 +25,12 @@
 #include "data_types.h"
 #include "logo.h"
 
+// This is used for storing gets existing in the 
+// workload so far, and using them for skewed 
+// query workload generation
+#define MAX_OLD_GETS_POOL_SIZE 10000000 // ~= 80MB
+
+// This is the product name
 #define PRODUCT "\
 -------------------------------------------------------------------------\n\
                     W O R K L O A D   G E N E R A T O R                  \n\
@@ -177,16 +183,25 @@ void print_settings(struct settings *s) {
     /////////////////////////////////////
     //           PRINT INFO            //
     /////////////////////////////////////
-    fprintf(stderr, "-------------------------\n");
+    fprintf(stderr, "+---------- CS 265 ----------+\n");
+    fprintf(stderr, "|        WORKLOAD INFO       |\n");
+    fprintf(stderr, "+----------------------------+\n");
+
     // Seed
-    fprintf(stderr, "initial-seed:\t%d\n", s->seed);
+    fprintf(stderr, "| initial-seed: %d\n", s->seed);
     // Puts
-    fprintf(stderr, "puts-total:\t%d\n", s->puts);
-    fprintf(stderr, "puts-batches:\t%d\n", s->puts_batches);
+    fprintf(stderr, "| puts-total: %d\n", s->puts);
+    fprintf(stderr, "| puts-batches: %d\n", s->puts_batches);
     // Gets
-    fprintf(stderr, "gets-total:\t%d\n", s->gets);
-    fprintf(stderr, "get-skewness:\t%lf\n", s->gets_skewness);
-    fprintf(stderr, "-------------------------\n");
+    fprintf(stderr, "| gets-total: %d\n", s->gets);
+    fprintf(stderr, "| get-skewness: %.4lf\n", s->gets_skewness);
+    // Ranges
+    fprintf(stderr, "| ranges: %d\n", s->ranges);
+    // Deletes
+    fprintf(stderr, "| deletes: %d\n", s->deletes);
+    // Gets misses ratio
+    fprintf(stderr, "| gets-misses-ratio: %.4lf\n", s->gets_misses_ratio);
+    fprintf(stderr, "+----------------------------+\n");
 }
 
 // ====================================================================== //
@@ -208,18 +223,12 @@ void generate_workload(struct settings *s) {
     for(i=0; i<puts_pool_size; i++) {
         puts_pool[i] = GEN_RANDOM_KEY();
     }
-    // Gets pool
-    int gets_pool_size = s->gets * (1-s->gets_skewness) + 1;
-    KEY_t *gets_pool = malloc(sizeof(KEY_t) * gets_pool_size);
-    for(i=0; i<gets_pool_size; i++) {
-        if(rand()%10 < (s->gets_misses_ratio * 10)) {
-            // With a probability a random number
-            gets_pool[i] = GEN_RANDOM_KEY();    
-        }
-        else {
-            // With a probability a number from the puts pool
-            gets_pool[i] = puts_pool[rand() % puts_pool_size];
-        }
+    // Memory of previous gets (for skewed workloads)
+    int old_gets_pool_max_size = MAX_OLD_GETS_POOL_SIZE * sizeof(KEY_t);
+    int old_gets_pool_count = 0;
+    KEY_t *old_gets_pool = malloc(sizeof(KEY_t) * old_gets_pool_max_size);
+    for(i=0; i<old_gets_pool_max_size; i++) {
+        old_gets_pool[i] = 0;
     }
 
     /////////////////////////////////////
@@ -233,6 +242,7 @@ void generate_workload(struct settings *s) {
 
     for(i=0; i<s->puts_batches; i++) {
         ////////////////// PUTS //////////////////
+        // If puts are external, create file.
         FILE *pf;
         if(s->external_puts) {
             char pfname[256];
@@ -240,11 +250,13 @@ void generate_workload(struct settings *s) {
             pf = fopen(pfname, "wb");
             printf("l %s\n", pfname);
         }
+        // Generate puts
         for(j=0; j<puts_batch_size; j++) {
             if(i+j > s->puts) {
                 break;
             }
             else {
+                // ---- UPDATES ----
                 // TODO: ASK QUESTION USE COMPLETE PUTS POOL?
                 //       IF COMPLETE THEN MORE UPDATES
                 //         THE SMALLER THE POOL THE MORE THE UPDATES VS INSERTS
@@ -254,8 +266,8 @@ void generate_workload(struct settings *s) {
                 
                 // Write
                 if(s->external_puts) {
-                     fwrite(&k, sizeof(KEY_t), 1, pf);
-                     fwrite(&v, sizeof(KEY_t), 1, pf);
+                    fwrite(&k, sizeof(KEY_t), 1, pf);
+                    fwrite(&v, sizeof(KEY_t), 1, pf);
                 }
                 else {
                     printf(PUT_PATTERN, k, v);
@@ -265,15 +277,43 @@ void generate_workload(struct settings *s) {
         if(s->external_puts) {
             fclose(pf);
         }
-        
+
         ////////////////// GETS //////////////////
         for(j=0; j<gets_batch_size; j++) {
             if(i+j > s->gets) {
                 break;
             }
             else {
-                KEY_t g = gets_pool[rand() % gets_pool_size];
-                printf(GET_PATTERN, g);
+                KEY_t k;
+                // With a probability use a new key as a query
+                if((rand()%10) > (s->gets_skewness*10) || 
+                    old_gets_pool_count == 0) {
+                    // With a probability use one of the 
+                    // previously inserted data as a query
+                    if((rand()%10) > (s->gets_misses_ratio*10)) {
+                        k = puts_pool[rand() % ((i+1)*puts_batch_size)];
+                    }
+                    // Or issue a completely random query 
+                    // most probably causing a miss
+                    else {
+                        k = GEN_RANDOM_KEY();
+                    }
+                    // Store this number in the pool for 
+                    // choosing it for future skewed queries
+                    if(old_gets_pool_count >= old_gets_pool_max_size) {
+                        old_gets_pool[rand() % old_gets_pool_count] = k;
+                    }
+                    else {
+                        old_gets_pool[old_gets_pool_count++] = k;
+                    }
+                }
+                // Or use one of the previously queried keys
+                else {
+                    k = old_gets_pool[rand() % old_gets_pool_count];
+                }
+
+                // Write in output
+                printf(GET_PATTERN, k);
             }
         }
 
@@ -301,7 +341,9 @@ void generate_workload(struct settings *s) {
                 break;
             }
             else {
-                KEY_t d = puts_pool[rand() % puts_pool_size];
+                // ---- DELETES ----
+                // TODO: Maybe restrict to current batch by also removing?
+                KEY_t d = puts_pool[rand() % ((i+1)*puts_batch_size)];
                 printf(DELETE_PATTERN, d);
             }
         }
@@ -309,7 +351,7 @@ void generate_workload(struct settings *s) {
     }
 
     // Free memory
-    free(gets_pool);
+    free(old_gets_pool);
     free(puts_pool);
 }
 

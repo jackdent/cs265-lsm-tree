@@ -4,7 +4,7 @@ evaluator:
 	$(CC) evaluator.c -o evaluator
 	
 generator:
-	$(CC) generator.c -o generator
+	$(CC) -g generator.c -o generator
 
 clean:
 	rm generator
