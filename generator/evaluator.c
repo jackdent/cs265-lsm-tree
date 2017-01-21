@@ -80,7 +80,13 @@ void evaluate_workload(char *filename) {
             case 'l':
                 // Load external file into array
                 fscanf(f, "%s\n", path);
-                // TODO: ...
+                FILE *pf = fopen(path, "rb");
+                while(!feof(f)) {
+                    fread(&k, sizeof(KEY_t), 1, pf);
+                    fread(&v, sizeof(KEY_t), 1, pf);
+                    values[k] = v;
+                    active[k] = 1;
+                }
                 break;
             case 'r':
                 // Issue range query
