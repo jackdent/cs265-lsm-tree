@@ -25,10 +25,22 @@
 #include "data_types.h"
 #include "logo.h"
 
-// This is used for storing gets existing in the 
-// workload so far, and using them for skewed 
-// query workload generation
+/////////////////////////////////////////////////////////////////////////////
+///////////////             D E F I N I T I O N S             ///////////////
+/////////////////////////////////////////////////////////////////////////////
+// This is used for storing gets existing in the workload so far
+// They are then used for skewed query workload generation
 #define MAX_OLD_GETS_POOL_SIZE 10000000 // ~= 80MB
+
+// This is used for storing puts existing issued so far
+// They are then used for non empty get query generation
+#define MAX_OLD_PUTS_POOL_SIZE 10000000 // ~= 80MB
+
+// Constants for the different operations generated
+#define OPERATION_PUT 0
+#define OPERATION_GET 1
+#define OPERATION_RANGE 2
+#define OPERATION_DELETE 3
 
 // This is the product name
 #define PRODUCT "\
@@ -36,6 +48,8 @@
                     W O R K L O A D   G E N E R A T O R                  \n\
 -------------------------------------------------------------------------\n\
 "
+/////////////////////////////////////////////////////////////////////////////
+
 
 // ====================================================================== //
 //                     COMMAND LINE ARGUMENTS PARSING
@@ -72,10 +86,6 @@ void initialize_settings(struct settings *s) {
     s->external_puts         = 0;
     s->seed                  = 13141;
     s->uniform_ranges        = 1;
-    s->min_lookup_batch_size = 2; 
-    s->max_lookup_batch_size = 2;
-    s->min_update_batch_size = 2;
-    s->max_update_batch_size = 2;
 }
 
 /**
@@ -83,7 +93,9 @@ void initialize_settings(struct settings *s) {
  * i.e., all valid arguments.
  */
 void usage(char * binary) {
-    //fprintf(stderr, DASLAB_LOGO);
+    #ifdef LOGO_IN_USAGE
+    fprintf(stderr, DASLAB_LOGO);
+    #endif
     fprintf(stderr, LOGO);
     fprintf(stderr, PRODUCT);
     fprintf(stderr, "Usage: %s\n\
@@ -95,10 +107,6 @@ void usage(char * binary) {
         --uniform-ranges *use uniform ranges (default)*\n\
         --gaussian-ranges *use gaussian ranges (default)*\n\
         --deletes [number of delete operations]\n\
-        --min-lookup-batch-size [minimum size of continuous lookups]\n\
-        --max-lookup-batch-size [maximum size of continuous lookups]\n\
-        --min-update-batch-size [minimum size of continuous updates]\n\
-        --max-update-batch-size [maximum size of continuous updates]\n\
         --external-puts *store puts in external binary files*\n\
         --seed [random number generator seed]\n\
         --help\n\
@@ -122,10 +130,6 @@ void parse_settings(int argc, char **argv, struct settings *s) {
             {"uniform-ranges",   no_argument,        0, 'u'},
             {"gaussian-ranges",  no_argument,        0, 'n'},
             {"deletes",          required_argument,  0, 'd'},
-            {"min-lookup-batch-size", required_argument, 0, 'l'},
-            {"max-lookup-batch-size", required_argument, 0, 'L'},
-            {"min-update-batch-size", required_argument, 0, 'i'},
-            {"max-update-batch-size", required_argument, 0, 'I'},
             {"seed",             required_argument,  0, 's'},
             {"external-puts",    no_argument,        0, 'e'},
             {"help",             no_argument,        0, 'h'},
@@ -169,18 +173,6 @@ void parse_settings(int argc, char **argv, struct settings *s) {
                 break;
             case 'n':
                 s->uniform_ranges = 0;
-                break;
-            case 'i':
-                s->min_update_batch_size = atoi(optarg);
-                break;
-            case 'I':
-                s->max_update_batch_size = atoi(optarg);
-                break;
-            case 'l':
-                s->min_lookup_batch_size = atoi(optarg);
-                break;
-            case 'L':
-                s->max_lookup_batch_size = atoi(optarg);
                 break;
             case 'h':
                 usage(argv[0]);
@@ -228,7 +220,6 @@ void print_settings(struct settings *s) {
     fprintf(stderr, "+---------- CS 265 ----------+\n");
     fprintf(stderr, "|        WORKLOAD INFO       |\n");
     fprintf(stderr, "+----------------------------+\n");
-
     // Seed
     fprintf(stderr, "| initial-seed: %d\n", s->seed);
     // Puts
@@ -250,7 +241,9 @@ void print_settings(struct settings *s) {
 // ====================================================================== //
 //                         MAIN WORKLOAD GENERATOR
 // ====================================================================== //
-
+/**
+ * Generates a workload based on some settings
+ */
 void generate_workload(struct settings *s) {
     int i, j;
     
@@ -260,12 +253,20 @@ void generate_workload(struct settings *s) {
     // Initialize random generator
     srand(s->seed);
 
-    // Puts pool
-    int puts_pool_size = s->puts;
-    KEY_t *puts_pool = malloc(sizeof(KEY_t) * puts_pool_size);
-    for(i=0; i<puts_pool_size; i++) {
-        puts_pool[i] = GEN_RANDOM_KEY();
+    // Memory of previous puts (for non empty gets)
+    int old_puts_pool_max_size;
+    int old_puts_pool_count = 0;
+    if(s->puts < MAX_OLD_PUTS_POOL_SIZE) {
+        old_puts_pool_max_size = s->puts * sizeof(KEY_t);    
     }
+    else {
+        old_puts_pool_max_size = MAX_OLD_PUTS_POOL_SIZE * sizeof(KEY_t);      
+    }
+    KEY_t *old_puts_pool = malloc(sizeof(KEY_t) * old_puts_pool_max_size);
+    for(i=0; i<old_puts_pool_max_size; i++) {
+        old_puts_pool[i] = 0;
+    }
+
     // Memory of previous gets (for skewed workloads)
     int old_gets_pool_max_size = MAX_OLD_GETS_POOL_SIZE * sizeof(KEY_t);
     int old_gets_pool_count = 0;
@@ -277,67 +278,95 @@ void generate_workload(struct settings *s) {
     /////////////////////////////////////
     //             PROCESS             //
     /////////////////////////////////////
-    int remaining_deletes = s->deletes;
-    int remaining_puts = s->puts;
-    int remaining_gets = s->gets;
-    int remaining_ranges = s->ranges;
+    int current_deletes = 0;
+    int current_puts = 0;
+    int current_gets = 0;
+    int current_ranges = 0;
+    int prev_operation = -1;
+    FILE *pf = NULL;
 
-    while(remaining_deletes || remaining_puts || remaining_gets || remaining_ranges) {
-        int updates = s->min_lookup_batch_size + (rand() % s->max_update_batch_size);
-        int lookups = s->min_lookup_batch_size + (rand() % s->max_update_batch_size);
+    while(current_deletes < s->deletes ||
+          current_puts < s->puts ||
+          current_gets < s->gets || 
+          current_ranges < s->ranges) 
+    {
+        // Decide a random operation
+        int operation = rand() % 4;
 
-        int gets_batch_size = lookups / 2;
-        int ranges_batch_size = lookups / 2;
-        int puts_batch_size = updates / 2;
-        int deletes_batch_size = updates / 2;
+        // TODO: Check if this operation has remaining else continue.
+        switch(operation) {
+            case OPERATION_PUT:
+                if(current_puts >= s->puts) 
+                    continue;
+                break;
+            case OPERATION_GET:
+                if(current_gets >= s->gets) 
+                    continue;
+                break;
+            case OPERATION_RANGE:
+                if(current_ranges >= s->ranges) 
+                    continue;
+                break;
+            case OPERATION_DELETE:
+                if(current_deletes >= s->deletes) 
+                    continue;
+                break;
+            default:
+                break;
+        }
 
-        if(remaining_puts < puts_batch_size)
-            puts_batch_size = remaining_puts;
-        if(remaining_deletes < deletes_batch_size)
-            deletes_batch_size = remaining_deletes;  
-        if(remaining_gets < gets_batch_size)
-            gets_batch_size = remaining_gets;        
-        if(remaining_ranges < ranges_batch_size)
-            ranges_batch_size = remaining_ranges;
-
-        fprintf(stderr, ">>> *NEW BATCH* (P:%d, G:%d, D:%d, R:%d)\n", 
-                puts_batch_size, gets_batch_size,
-                deletes_batch_size, ranges_batch_size);
-                        
-        ////////////////// PUTS //////////////////
-        // If puts are external, create file.
-        FILE *pf;
-        if(s->external_puts) {
+        // Check if I have to open a new binary file for puts
+        if(prev_operation != OPERATION_PUT && 
+           operation == OPERATION_PUT &&
+           s->external_puts) {
+            if(pf != NULL) {
+                fclose(pf);
+                pf = NULL;
+            }
             char pfname[256];
             sprintf(pfname, "%d.dat", i); 
             pf = fopen(pfname, "wb");
             printf("l %s\n", pfname);
         }
-        // Generate puts
-        for(j=0; j<puts_batch_size; j++) {
+        prev_operation = operation;
+
+        // Perform operation
+        if(operation == OPERATION_PUT) {
+            ////////////////// PUTS //////////////////
             // ---- UPDATES ----
             // TODO: ASK QUESTION USE COMPLETE PUTS POOL?
             //       IF COMPLETE THEN MORE UPDATES
             //         THE SMALLER THE POOL THE MORE THE UPDATES VS INSERTS
             // Pick key and value
-            KEY_t k = puts_pool[s->puts - (remaining_puts) + j];
+            KEY_t k = GEN_RANDOM_KEY();
             VAL_t v = GEN_RANDOM_VAL();
             
             // Write
             if(s->external_puts) {
                 fwrite(&k, sizeof(KEY_t), 1, pf);
-                fwrite(&v, sizeof(KEY_t), 1, pf);
+                fwrite(&v, sizeof(VAL_t), 1, pf);
             }
             else {
                 printf(PUT_PATTERN, k, v);
             } 
-        }
-        if(s->external_puts) {
-            fclose(pf);
-        }
 
-        ////////////////// GETS //////////////////
-        for(j=0; j<gets_batch_size; j++) {
+            // Store this number in the pool for 
+            // choosing it for future get queries
+            if(old_puts_pool_count >= old_puts_pool_max_size) {
+                old_puts_pool[rand() % old_puts_pool_count] = k;
+            }
+            else {
+                old_puts_pool[old_puts_pool_count++] = k;
+            }
+
+            current_puts++;
+        }
+        else if(operation == OPERATION_GET) {
+            // No puts yet
+            if(!current_puts)
+                continue;
+
+            ////////////////// GETS //////////////////
             KEY_t k;
             // With a probability use a new key as a query
             if((rand()%10) > (s->gets_skewness*10) || 
@@ -345,10 +374,7 @@ void generate_workload(struct settings *s) {
                 // With a probability use one of the 
                 // previously inserted data as a query
                 if((rand()%10) > (s->gets_misses_ratio*10)) {
-
-                    // TODO: FIX THIS
-                    k = puts_pool[rand() % ((i+1)*puts_batch_size)];
-
+                    k = old_puts_pool[rand() % old_puts_pool_count];
                 }
                 // Or issue a completely random query 
                 // most probably causing a miss
@@ -372,49 +398,39 @@ void generate_workload(struct settings *s) {
             // Write in output
             printf(GET_PATTERN, k);
             
+            current_gets++;
         }
+        else if(operation == OPERATION_RANGE) {
+            // No puts yet
+            if(!current_puts)
+                continue;
 
-        //////////////// RANGES //////////////////
-        for(j=0; j<ranges_batch_size; j++) {
-            if(i+j > s->ranges) {
-                break;
+            //////////////// RANGES ////////////////// 
+            // TODO: USE DIFFERENT DISTRIBUTIONS
+            KEY_t a = GEN_RANDOM_KEY();
+            KEY_t b = GEN_RANDOM_KEY();
+
+            if(a < b) {
+                printf(RANGE_PATTERN, a, b);
             }
             else {
-                KEY_t a = GEN_RANDOM_KEY();
-                KEY_t b = GEN_RANDOM_KEY();
-
-                if(a < b) {
-                    printf(RANGE_PATTERN, a, b);
-                }
-                else {
-                    printf(RANGE_PATTERN, b, a);
-                }
+                printf(RANGE_PATTERN, b, a);
             }
+            
+            current_ranges++;
         }
-
-        ////////////////// DELETES //////////////////
-        for(j=0; j<deletes_batch_size; j++) {
-            if(i+j > s->deletes) {
-                break;
-            }
-            else {
-
-                // TODO: FIX THIS
-                KEY_t d = puts_pool[rand() % ((i+1)*puts_batch_size)];
-                printf(DELETE_PATTERN, d);
-            }
+        else if(operation == OPERATION_DELETE) {
+            ////////////////// DELETES //////////////////
+            KEY_t d = old_puts_pool[rand() % old_puts_pool_count];
+            printf(DELETE_PATTERN, d);
+            
+            current_deletes++;
         }
-
-        // Operations left
-        remaining_puts -= puts_batch_size;
-        remaining_gets -= gets_batch_size;
-        remaining_ranges -= ranges_batch_size;
-        remaining_deletes -= deletes_batch_size;
     }
 
     // Free memory
     free(old_gets_pool);
-    free(puts_pool);
+    free(old_puts_pool);
 }
 
 /**
