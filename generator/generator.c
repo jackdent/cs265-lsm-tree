@@ -109,7 +109,7 @@ void usage(char * binary) {
         --gets-misses-ratio [empty result queries ratio]\n\
         --ranges [number of range operations]\n\
         --uniform-ranges *use uniform ranges (default)*\n\
-        --gaussian-ranges *use gaussian ranges (default)*\n\
+        --gaussian-ranges *use gaussian ranges*\n\
         --deletes [number of delete operations]\n\
         --external-puts *store puts in external binary files*\n\
         --seed [random number generator seed]\n\
