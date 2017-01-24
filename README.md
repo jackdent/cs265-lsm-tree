@@ -1,5 +1,3 @@
-![Screen Shot 2017-01-24 at 1.17.20 PM.png](https://bitbucket.org/repo/9de5E4/images/2809674872-Screen%20Shot%202017-01-24%20at%201.17.20%20PM.png)
-
 # Generator #
 
 ## Requirements, building and running ##
@@ -27,6 +25,7 @@ You can now run the following to see all available options:
 ./generator --help
 ```
 
+![Screen Shot 2017-01-24 at 1.17.20 PM.png](https://bitbucket.org/repo/9de5E4/images/2809674872-Screen%20Shot%202017-01-24%20at%201.17.20%20PM.png)
 
 ## Examples ##
 **Query 1:** Insert 100000 keys, perform 1000 gets and 10 range queries and 20 deletes. The amount of misses of gets should be approximately 30% (--gets-misses-ratio) and 20% of the queries should be repeated (--gets-skewness).
