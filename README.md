@@ -15,3 +15,8 @@ make clean; make;
 ./generator --help
 
 ```
+
+or more simply...
+```
+cc generator.c -o generator -lgsl
+```
