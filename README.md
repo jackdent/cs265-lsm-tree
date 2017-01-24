@@ -67,4 +67,4 @@ You can execute a workload and see some basic statistics about it, using the pyt
 python evaluate.py workload.txt
 ```
 
-For extra options etc, please look inside the script.
+**Note: For extra options etc, please look inside the script.**
