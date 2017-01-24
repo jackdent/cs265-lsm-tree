@@ -1,11 +1,13 @@
 # Harvard CS265 - Big Data Systems #
-This repository contains the code of a workload generator for an LSM tree.
-It follows the DSL specified for the systems project of CS265 (Spring 2017).
+---
+*This repository contains the code of a workload generator for an LSM tree.
+It follows the DSL specified for the systems project of CS265 (Spring 2017).*
 
-More information can be found [here](http://daslab.seas.harvard.edu/classes/cs265/project.html).
-
+*More information can be found [here](http://daslab.seas.harvard.edu/classes/cs265/project.html).*
 
 ## Workload and Data Generator ##
+---
+
 ### Dependencies ###
 You need the GNU scientific library in order to use the generator (https://www.gnu.org/software/gsl/).
 
@@ -57,8 +59,8 @@ You can now run the following to see all available options:
 **Note: You can always set the random number generator seed using --seed XXXX**
 
 
-## Evaluating Workload ##
-
+## Evaluating a Workload ##
+---
 You can execute a workload and see some basic statistics about it, using the python script:
 
 ```
