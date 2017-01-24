@@ -342,7 +342,7 @@ void generate_workload(struct settings *s) {
             char pfname[256];
             sprintf(pfname, "%d.dat", current_file++); 
             pf = fopen(pfname, "wb");
-            printf("l %s\n", pfname);
+            printf("l \"%s\"\n", pfname);
         }
         prev_operation = operation;
 
@@ -440,6 +440,10 @@ void generate_workload(struct settings *s) {
             current_ranges++;
         }
         else if(operation == OPERATION_DELETE) {
+            // No puts yet
+            if(!current_puts)
+                continue;
+
             ////////////////// DELETES //////////////////
             KEY_t d = old_puts_pool[rand() % old_puts_pool_count];
             printf(DELETE_PATTERN, d);
