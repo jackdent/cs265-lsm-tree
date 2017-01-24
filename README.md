@@ -1,8 +1,7 @@
-# Generator #
+# Harvard CS265 - Big Data Systems #
 
-## Requirements, building and running ##
-
-### Requirements ###
+## Generator ##
+### Dependencies ###
 You need the GNU scientific library in order to use the generator (https://www.gnu.org/software/gsl/).
 
 * Ubuntu Linux: ```sudo apt-get install libgsl-dev```
@@ -28,7 +27,7 @@ You can now run the following to see all available options:
 
 ![Screen Shot 2017-01-24 at 1.21.17 PM.png](https://bitbucket.org/repo/9de5E4/images/2315274117-Screen%20Shot%202017-01-24%20at%201.21.17%20PM.png)
 
-## Examples ##
+### Examples ###
 **Query 1:** Insert 100000 keys, perform 1000 gets and 10 range queries and 20 deletes. The amount of misses of gets should be approximately 30% (--gets-misses-ratio) and 20% of the queries should be repeated (--gets-skewness).
 
 ```
@@ -53,7 +52,7 @@ You can now run the following to see all available options:
 **Note: You can always set the random number generator seed using --seed XXXX**
 
 
-# Executing #
+## Executing ##
 
 You can execute a workload and see some basic statistics about it, using the python script:
 
