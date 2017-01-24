@@ -7,6 +7,7 @@ You need the GNU scientific library in order to use the generator (https://www.g
 
 * Ubuntu Linux: ```sudo apt-get install libgsl-dev```
 * Mac OS X: ```brew install gsl```
+* Cygwin: install the *gsl, gsl-devel* packages
 
 ### Building ###
 ```
