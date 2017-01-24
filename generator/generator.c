@@ -24,6 +24,7 @@
 #include <math.h>
 
 #include <gsl/gsl_rng.h>
+#include <gsl/gsl_randist.h>
 
 #include "data_types.h"
 #include "logo.h"
@@ -349,8 +350,8 @@ void generate_workload(struct settings *s) {
         if(operation == OPERATION_PUT) {
             ////////////////// PUTS //////////////////
             // Pick key and value
-            KEY_t k = GEN_RANDOM_KEY(r);
-            VAL_t v = GEN_RANDOM_VAL(r);
+            KEY_t k = GEN_RANDOM_KEY_UNIFORM(r);
+            VAL_t v = GEN_RANDOM_VAL_UNIFORM(r);
             
             // Write
             if(s->external_puts) {
@@ -390,7 +391,7 @@ void generate_workload(struct settings *s) {
                 // Or issue a completely random query 
                 // most probably causing a miss
                 else {
-                    k = GEN_RANDOM_KEY(r);
+                    k = GEN_RANDOM_KEY_UNIFORM(r);
                 }
                 // Store this number in the pool for 
                 // choosing it for future skewed queries
@@ -418,8 +419,16 @@ void generate_workload(struct settings *s) {
 
             //////////////// RANGES ////////////////// 
             // TODO: USE DIFFERENT DISTRIBUTIONS
-            KEY_t a = GEN_RANDOM_KEY(r);
-            KEY_t b = GEN_RANDOM_KEY(r);
+            KEY_t a;
+            KEY_t b;
+            if(s->uniform_ranges) {
+                a = GEN_RANDOM_KEY_UNIFORM(r);
+                b = GEN_RANDOM_KEY_UNIFORM(r);
+            }
+            else {
+                a = GEN_RANDOM_KEY_GAUSS(r);
+                b = GEN_RANDOM_KEY_GAUSS(r);
+            }
 
             if(a < b) {
                 printf(RANGE_PATTERN, a, b);
