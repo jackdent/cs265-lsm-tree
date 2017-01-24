@@ -1,6 +1,6 @@
 # Harvard CS265 - Big Data Systems #
 
-## Generator ##
+## Workload and Data Generator ##
 ### Dependencies ###
 You need the GNU scientific library in order to use the generator (https://www.gnu.org/software/gsl/).
 
@@ -52,7 +52,7 @@ You can now run the following to see all available options:
 **Note: You can always set the random number generator seed using --seed XXXX**
 
 
-## Executing ##
+## Evaluating Workload ##
 
 You can execute a workload and see some basic statistics about it, using the python script:
 
