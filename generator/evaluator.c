@@ -16,12 +16,15 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <float.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <math.h>
+#include <sys/types.h>
+#include <sys/mman.h>
 #include "data_types.h"
 #include "logo.h"
 
@@ -40,13 +43,37 @@
 void evaluate_workload(char *filename) {
     unsigned int i;
 
-    // All values are stored here
-    VAL_t *values = malloc(sizeof(VAL_t) * KEY_MAX);
-    char  *active = malloc(sizeof(char) * KEY_MAX);
+    // TEST: EITHER USE MMAPPED FILES OR MEMORY
+    unsigned long memsize = (unsigned long) ((unsigned long) KEY_MAX - (unsigned long) KEY_MIN);
+    FILE *fp = fopen("active", "w");
+    printf("SIZE: %lu\n", memsize);
+    fseek(fp, memsize, SEEK_SET);
+    fputc('\0', fp);
+    fclose(fp);
 
+    int val_fd, active_fd;
+    char *f_values;
+    char *f_active;
+
+    val_fd = open("values", O_RDWR);
+    active_fd = open("active", O_RDWR);
+
+
+    size_t pagesize = getpagesize();
+    f_values = mmap((caddr_t)0, pagesize, PROT_READ, 
+                    MAP_SHARED, val_fd, pagesize);
+    f_active = mmap((caddr_t)0, pagesize, PROT_READ, 
+                    MAP_SHARED, val_fd, pagesize);
+
+
+    // // All values are stored here
+    // VAL_t *values = malloc(sizeof(VAL_t) * KEY_MAX);
+    // char  *active = malloc(sizeof(char) * KEY_MAX);
+
+    printf("ERASING...\n");
     // Initialize to inactive
     for(i=1; i<KEY_MAX; i++) {
-        active[i] = 0;
+        f_active[i] = 0;
     }
 
     // Variables to scan in file
@@ -64,14 +91,15 @@ void evaluate_workload(char *filename) {
             case 'p':
                 // Put value in array
                 fscanf(f, PUT_PATTERN_SCAN, &k, &v);
-                values[k] = v;
-                active[k] = 1;
+                // values[k] = v;
+                f_active[k] = 1;
+                //f_active[k] = 1;
                 break;
             case 'g':
                 // Get value from array
                 fscanf(f, GET_PATTERN_SCAN, &k);
-                if(active[k]) {
-                    printf("%d\n", values[k]);
+                if(f_active[k]) {
+                    // printf("%d\n", values[k]);
                 }
                 else {
                     printf("\n");
@@ -84,8 +112,8 @@ void evaluate_workload(char *filename) {
                 while(!feof(f)) {
                     fread(&k, sizeof(KEY_t), 1, pf);
                     fread(&v, sizeof(KEY_t), 1, pf);
-                    values[k] = v;
-                    active[k] = 1;
+                    // values[k] = v;
+                    f_active[k] = 1;
                 }
                 break;
             case 'r':
@@ -93,8 +121,8 @@ void evaluate_workload(char *filename) {
                 fscanf(f, RANGE_PATTERN_SCAN, &k, &k2);
                 // TODO: <= ??? or <
                 for(i=k; i<=k2; i++) {
-                    if(active[i]) {
-                        printf("%d ", values[i]);
+                    if(f_active[i]) {
+                        // printf("%d ", values[i]);
                     }
                 }
                 printf("\n");
@@ -102,15 +130,15 @@ void evaluate_workload(char *filename) {
             case 'd':
                 // Delete value from array
                 fscanf(f, DELETE_PATTERN_SCAN, &k);
-                active[k] = 0;
+                f_active[k] = 0;
                 break;
             default:
                 break;
         }
     }
 
-    free(values);
-    free(active);
+    // free(values);
+    // free(active);
 }
 
 /**
