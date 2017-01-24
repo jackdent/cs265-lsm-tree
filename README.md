@@ -1,5 +1,6 @@
 # Generator #
 
+## Requirements, building and running ##
 You need the GNU scientific library in order to use the generator (https://www.gnu.org/software/gsl/).
 
 * Ubuntu Linux: ```sudo apt-get install libgsl-dev```
