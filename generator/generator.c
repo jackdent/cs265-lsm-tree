@@ -22,6 +22,9 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <math.h>
+
+#include <gsl/gsl_rng.h>
+
 #include "data_types.h"
 #include "logo.h"
 
@@ -251,9 +254,14 @@ void generate_workload(struct settings *s) {
     ///    INITIALIZE NUMBER POOLS    ///
     /////////////////////////////////////
     // Initialize random generator
-    srand(s->seed);
+    gsl_rng_default_seed = s->seed;
+    const gsl_rng_type *T;
+    gsl_rng *r;
+    gsl_rng_env_setup();
+    T = gsl_rng_default;
+    r = gsl_rng_alloc(T);
 
-    // Memory of previous puts (for non empty gets)
+    // Buffer of previous puts (for non empty gets)
     int old_puts_pool_max_size;
     int old_puts_pool_count = 0;
     if(s->puts < MAX_OLD_PUTS_POOL_SIZE) {
@@ -267,9 +275,15 @@ void generate_workload(struct settings *s) {
         old_puts_pool[i] = 0;
     }
 
-    // Memory of previous gets (for skewed workloads)
-    int old_gets_pool_max_size = MAX_OLD_GETS_POOL_SIZE * sizeof(KEY_t);
+    // Buffer of previous gets (for skewed workloads)
+    int old_gets_pool_max_size;
     int old_gets_pool_count = 0;
+    if(s->gets < MAX_OLD_GETS_POOL_SIZE) {
+        old_gets_pool_max_size = s->gets * sizeof(KEY_t);    
+    }
+    else {
+        old_gets_pool_max_size = MAX_OLD_GETS_POOL_SIZE * sizeof(KEY_t);      
+    }
     KEY_t *old_gets_pool = malloc(sizeof(KEY_t) * old_gets_pool_max_size);
     for(i=0; i<old_gets_pool_max_size; i++) {
         old_gets_pool[i] = 0;
@@ -283,6 +297,7 @@ void generate_workload(struct settings *s) {
     int current_gets = 0;
     int current_ranges = 0;
     int prev_operation = -1;
+    int current_file = 0;
     FILE *pf = NULL;
 
     while(current_deletes < s->deletes ||
@@ -324,7 +339,7 @@ void generate_workload(struct settings *s) {
                 pf = NULL;
             }
             char pfname[256];
-            sprintf(pfname, "%d.dat", i); 
+            sprintf(pfname, "%d.dat", current_file++); 
             pf = fopen(pfname, "wb");
             printf("l %s\n", pfname);
         }
@@ -333,13 +348,9 @@ void generate_workload(struct settings *s) {
         // Perform operation
         if(operation == OPERATION_PUT) {
             ////////////////// PUTS //////////////////
-            // ---- UPDATES ----
-            // TODO: ASK QUESTION USE COMPLETE PUTS POOL?
-            //       IF COMPLETE THEN MORE UPDATES
-            //         THE SMALLER THE POOL THE MORE THE UPDATES VS INSERTS
             // Pick key and value
-            KEY_t k = GEN_RANDOM_KEY();
-            VAL_t v = GEN_RANDOM_VAL();
+            KEY_t k = GEN_RANDOM_KEY(r);
+            VAL_t v = GEN_RANDOM_VAL(r);
             
             // Write
             if(s->external_puts) {
@@ -379,7 +390,7 @@ void generate_workload(struct settings *s) {
                 // Or issue a completely random query 
                 // most probably causing a miss
                 else {
-                    k = GEN_RANDOM_KEY();
+                    k = GEN_RANDOM_KEY(r);
                 }
                 // Store this number in the pool for 
                 // choosing it for future skewed queries
@@ -407,8 +418,8 @@ void generate_workload(struct settings *s) {
 
             //////////////// RANGES ////////////////// 
             // TODO: USE DIFFERENT DISTRIBUTIONS
-            KEY_t a = GEN_RANDOM_KEY();
-            KEY_t b = GEN_RANDOM_KEY();
+            KEY_t a = GEN_RANDOM_KEY(r);
+            KEY_t b = GEN_RANDOM_KEY(r);
 
             if(a < b) {
                 printf(RANGE_PATTERN, a, b);
@@ -431,6 +442,13 @@ void generate_workload(struct settings *s) {
     // Free memory
     free(old_gets_pool);
     free(old_puts_pool);
+    gsl_rng_free(r);
+
+    // Close file
+    if(pf != NULL) {
+        fclose(pf);
+        pf = NULL;
+    }
 }
 
 /**

@@ -1,11 +1,7 @@
-all: generator evaluator
-
-evaluator: 
-	$(CC) evaluator.c -o evaluator
+all: generator 
 	
 generator:
-	$(CC) -g generator.c -o generator
+	$(CC) -g generator.c -o generator -lgsl
 
 clean:
 	rm generator
-	rm evaluator

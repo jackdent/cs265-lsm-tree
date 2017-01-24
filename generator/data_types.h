@@ -13,17 +13,16 @@
 #ifndef DATA_TYPES_H
 #define DATA_TYPES_H
 
+#define GEN_RANDOM_KEY(r) gsl_rng_get(r);
+#define GEN_RANDOM_VAL(r) gsl_rng_get(r);
+
 // VALUE
 typedef int32_t VAL_t;
-#define GEN_RANDOM_VAL() rand() - rand();
 
 #ifdef UNSIGNED_KEYS
     // KEY
     typedef uint32_t KEY_t;
-    #define KEY_MAX 4294967295
-    #define KEY_MIN 0
-    #define GEN_RANDOM_KEY() rand() + rand();
-
+    
     // PRINT PATTERNS
     #define PUT_PATTERN "p %u %d\n"
     #define GET_PATTERN "g %u\n"
@@ -38,10 +37,7 @@ typedef int32_t VAL_t;
 #else
     // KEY
     typedef int32_t KEY_t;
-    #define KEY_MAX 2147483647
-    #define KEY_MIN -2147483647
-    #define GEN_RANDOM_KEY() rand() + rand();
-
+    
     // PRINT PATTERNS
     #define PUT_PATTERN "p %d %d\n"
     #define GET_PATTERN "g %d\n"
