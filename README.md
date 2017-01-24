@@ -1,3 +1,5 @@
+![Screen Shot 2017-01-24 at 1.17.20 PM.png](https://bitbucket.org/repo/9de5E4/images/2809674872-Screen%20Shot%202017-01-24%20at%201.17.20%20PM.png)
+
 # Generator #
 
 ## Requirements, building and running ##
