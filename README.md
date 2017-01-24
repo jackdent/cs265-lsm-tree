@@ -1,4 +1,7 @@
 # Harvard CS265 - Big Data Systems #
+This repository contains the code of a workload generator for an LSM tree.
+It follows the DSL specified for the systems project of CS265 (Spring 2017).
+
 
 ## Workload and Data Generator ##
 ### Dependencies ###
