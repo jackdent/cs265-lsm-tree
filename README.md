@@ -24,7 +24,7 @@ make clean; make;
 
 or simply...
 ```
-cc generator.c -o generator -lgsl
+cc generator.c -o generator -lgsl -lgslcblas
 ```
 
 ### Running ###
