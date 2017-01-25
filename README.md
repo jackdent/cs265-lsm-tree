@@ -62,8 +62,18 @@ You can now run the following to see all available options:
 
 ## Evaluating a Workload ##
 ---
-You can execute a workload and see some basic statistics about it, using the python script:
+You can execute a workload and see some basic statistics about it, using the ```evaluate.py``` python script.
 
+### Dependencies ###
+You need to install the blist library.
+
+```pip install blist```
+
+*Note: In Fedora Linux, you might need to install it using: ```dnf install python-blist```.
+
+### Running ###
+
+Run as follows:
 ```
 python evaluate.py workload.txt
 ```
