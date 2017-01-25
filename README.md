@@ -12,6 +12,7 @@ It follows the DSL specified for the systems project of CS265 (Spring 2017).*
 You need the GNU scientific library in order to use the generator (https://www.gnu.org/software/gsl/).
 
 * Ubuntu Linux: ```sudo apt-get install libgsl-dev```
+* Fedora Linux: ```dnf install gsl-devel```
 * Mac OS X: ```brew install gsl```
 * Cygwin: install the *gsl, gsl-devel* packages
 
