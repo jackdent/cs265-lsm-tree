@@ -67,7 +67,7 @@ You can execute a workload and see some basic statistics about it, using the ```
 ### Dependencies ###
 You need to install the [blist](https://pypi.python.org/pypi/blist/?) library.
 
-```pip install blist```
+Most platforms: ```pip install blist```
 
 *Note: In Fedora Linux, you might need to install it using: ```dnf install python-blist```.*
 
