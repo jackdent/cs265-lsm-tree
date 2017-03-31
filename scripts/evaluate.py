@@ -59,7 +59,7 @@ def print_stats(time_elapsed):
     global ranges
     global successful_deletes
     global failed_deletes
-    global loads  
+    global loads
     print "------------------------------------"
     print "PUTS", puts
     print "SUCCESFUL_GETS", successful_gets
@@ -120,7 +120,7 @@ if __name__ == "__main__":
             if line[0] == "d":
                 key = int(line.split(" ")[1])
                 try:
-                    del db[key] 
+                    del db[key]
                     log("SUCCESSFUL_DELETE", verbose)
                 except:
                     log("FAILED_DELETE", verbose)
@@ -149,5 +149,3 @@ if __name__ == "__main__":
 
     # Closing file
     f.close()
-
-
