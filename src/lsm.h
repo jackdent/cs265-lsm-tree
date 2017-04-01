@@ -14,7 +14,7 @@ using namespace std;
 #define DEFAULT_BUFFER_NUM_PAGES 1000
 
 #define TMP_FILE_PATTERN "/tmp/lsm-XXXXXX"
-#define DUMP_PATTERN "%d:%d:L%d"
+#define DUMP_PATTERN "%d:%d"
 #define LEVEL_NUM_ENTRIES_PATTERN "LVL%d: %lu"
 
 struct entry {
@@ -28,68 +28,76 @@ typedef struct entry entry_t;
 
 class EntryContainer {
 public:
-    unsigned long num_entries, max_entries;
-    EntryContainer(unsigned long max_entries) : max_entries(max_entries) {num_entries = 0;}
+    unsigned long num_entries;
+    static unsigned long max_entries;
+    EntryContainer(void) : num_entries(0) {}
 };
 
-class Level : public EntryContainer {
+class Enclosure : public EntryContainer {
     BloomFilter bloom_filter;
+    KEY_t max_key, min_key;
 public:
     string tmp_file;
-    Level(unsigned long);
-    ~Level(void);
-    bool get(KEY_t, VAL_t *);
-    bool put(KEY_t, VAL_t val);
+    Enclosure(void);
+    ~Enclosure(void);
+    bool get(KEY_t, VAL_t *) const;
     bool put(entry_t *, unsigned long);
-    void dump(int);
-};
-
-class Buffer : public EntryContainer {
-    unsigned long head() {return max_entries - num_entries;}
-public:
-    entry_t *entries;
-    Buffer(unsigned long);
-    ~Buffer();
-    bool get(KEY_t, VAL_t *);
-    bool put(KEY_t, VAL_t val);
-    void dump(void);
-    void sort(void);
-    void empty(void) {num_entries = 0;}
-    Level * to_level(void);
-};
-
-struct merge_entry {
-    entry_t entry;
-    int stream;
-    bool operator<(const merge_entry& other) const {return entry < other.entry;}
-    bool operator>(const merge_entry& other) const {return entry > other.entry;}
 };
 
 typedef struct merge_entry merge_entry_t;
 
 class MergeContext {
     priority_queue<merge_entry_t, vector<merge_entry_t>, greater<merge_entry_t>> queue;
-    vector<ifstream> streams;
 public:
-    MergeContext(vector<Level *> &);
+    ~MergeContext(void);
+    void add(Enclosure const &enclosure);
+    void add(deque<Enclosure> const &);
     entry_t next(void);
     bool done(void);
 };
 
+struct merge_entry {
+    entry_t entry;
+    ifstream *stream;
+    bool operator<(const merge_entry& other) const {return entry < other.entry;}
+    bool operator>(const merge_entry& other) const {return entry > other.entry;}
+};
+
+class Buffer : public EntryContainer {
+public:
+    entry_t *entries;
+    Buffer();
+    ~Buffer();
+    bool get(KEY_t, VAL_t *) const;
+    bool put(KEY_t, VAL_t val);
+    void dump(void) const;
+    void empty(void) {num_entries = 0;}
+    entry_t * at(unsigned long i) const {return &entries[max_entries - num_entries + i];}
+    entry_t * head(void) const {return at(0);}
+    entry_t * tail(void) const {return at(num_entries);}
+};
+
+class Level {
+public:
+    int max_enclosures;
+    deque<Enclosure> enclosures;
+    Level(unsigned long max_enclosures) : max_enclosures(max_enclosures) {}
+    bool get(KEY_t, VAL_t *) const;
+    void dump(void) const;
+    void empty(void);
+};
+
 class LSMTree {
     Buffer buffer;
-    vector<Level *> levels;
+    vector<Level> levels;
     void merge_down(int);
-    void flush_buffer(void) {merge_down(0);};
 public:
-    LSMTree(unsigned long, int, int);
-    ~LSMTree();
-    int depth() {return levels.size() + 1;}
-    tuple<Level *, MergeContext *> all(void);
+    LSMTree(int, int);
+    tuple<Enclosure *, MergeContext *> all(void) const;
     void put(KEY_t, VAL_t);
-    void get(KEY_t);
-    void range(KEY_t, KEY_t);
+    void get(KEY_t) const;
+    void range(KEY_t, KEY_t) const;
     void del(KEY_t);
     void load(string);
-    void stats(void);
+    void stats(void) const;
 };

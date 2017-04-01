@@ -5,7 +5,7 @@
  * and modified for the C++ environment.
  */
 
-uint64_t BloomFilter::hash_1(KEY_t k) {
+uint64_t BloomFilter::hash_1(KEY_t k) const {
     uint64_t key;
 
     key = k;
@@ -19,7 +19,7 @@ uint64_t BloomFilter::hash_1(KEY_t k) {
     return key % BLOOM_FILTER_SIZE;
 }
 
-uint64_t BloomFilter::hash_2(KEY_t k) {
+uint64_t BloomFilter::hash_2(KEY_t k) const {
     uint64_t key;
 
     key = k;
@@ -33,7 +33,7 @@ uint64_t BloomFilter::hash_2(KEY_t k) {
     return key % BLOOM_FILTER_SIZE;
 }
 
-uint64_t BloomFilter::hash_3(KEY_t k) {
+uint64_t BloomFilter::hash_3(KEY_t k) const {
     uint64_t key;
 
     key = k;
@@ -52,7 +52,7 @@ void BloomFilter::set(KEY_t key) {
     table.set(hash_3(key));
 }
 
-bool BloomFilter::is_set(KEY_t key) {
+bool BloomFilter::is_set(KEY_t key) const {
     return (table.test(hash_1(key))
          && table.test(hash_2(key))
          && table.test(hash_3(key)));
