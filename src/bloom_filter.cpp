@@ -1,4 +1,4 @@
-#include "bloom.h"
+#include "bloom_filter.h"
 
 /*
  * Hash functions taken from https://gist.github.com/badboy/6267743
