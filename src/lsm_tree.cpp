@@ -9,7 +9,6 @@
 #include "level.h"
 #include "lsm_tree.h"
 #include "merge.h"
-#include "thread_pool.h"
 #include "unistd.h"
 
 using namespace std;
@@ -36,11 +35,12 @@ istream& operator>>(istream& stream, entry_t& entry) {
  * LSM Tree
  */
 
-LSMTree::LSMTree(int buffer_max_entries, int depth, int fanout, int num_threads) : buffer(buffer_max_entries) {
+LSMTree::LSMTree(int buffer_max_entries, int depth, int fanout, int num_threads)
+    : buffer(buffer_max_entries), thread_pool(num_threads)
+{
     int i, max_enclosures;
 
     enclosure_size = buffer_max_entries;
-    num_threads = num_threads;
     max_enclosures = 1;
 
     for (i = 1; i < depth; i++) {
@@ -130,7 +130,7 @@ void LSMTree::put(KEY_t key, VAL_t val) {
     }
 }
 
-Enclosure * LSMTree::get_enclosure(int index) const {
+Enclosure * LSMTree::get_enclosure(int index) {
     for (const auto& level : levels) {
         if (index < level.enclosures.size()) {
             // TODO: why do I need to cast from const?
@@ -143,12 +143,15 @@ Enclosure * LSMTree::get_enclosure(int index) const {
     return nullptr;
 };
 
-void LSMTree::get(KEY_t key) const {
+void LSMTree::get(KEY_t key) {
     VAL_t val;
     int latest_enclosure;
     SpinLock lock;
     atomic<int> counter;
-    ThreadPool thread_pool(num_threads);
+
+    /*
+     * Search buffer
+     */
 
     if (buffer.get(key, &val)) {
         if (val != VAL_TOMBSTONE) cout << val;
@@ -156,10 +159,14 @@ void LSMTree::get(KEY_t key) const {
         return;
     }
 
+    /*
+     * Search enclosures
+     */
+
     counter = 0;
     latest_enclosure = -1;
 
-    function<void (void)> search = [&] {
+    worker_task search = [&] {
         int current_enclosure;
         Enclosure *enclosure;
         VAL_t *current_val;
@@ -200,21 +207,17 @@ void LSMTree::get(KEY_t key) const {
     };
 
     thread_pool.launch(search);
-    thread_pool.wait();
+    thread_pool.wait_all();
 
-    if (latest_enclosure >= 0 && val != VAL_TOMBSTONE) {
-        cout << val;
-    }
-
+    if (latest_enclosure >= 0 && val != VAL_TOMBSTONE) cout << val;
     cout << endl;
 }
 
-void LSMTree::range(KEY_t start, KEY_t end) const {
+void LSMTree::range(KEY_t start, KEY_t end) {
     vector<entry_t> *buffer_range;
     map<int, vector<entry_t> *> ranges;
     SpinLock lock;
     atomic<int> counter;
-    ThreadPool thread_pool(num_threads);
     MergeContext merge_ctx;
     entry_t entry;
 
@@ -248,7 +251,7 @@ void LSMTree::range(KEY_t start, KEY_t end) const {
 
     counter = 0;
 
-    function<void (void)> search = [&] {
+    worker_task search = [&] {
         int current_enclosure;
         Enclosure *enclosure;
         vector<entry_t> *range;
@@ -271,6 +274,9 @@ void LSMTree::range(KEY_t start, KEY_t end) const {
 
         search();
     };
+
+    thread_pool.launch(search);
+    thread_pool.wait_all();
 
     /*
      * Merge ranges and print keys
@@ -318,27 +324,7 @@ void LSMTree::load(string file_path) {
     }
 }
 
-// tuple<Enclosure *, MergeContext *> LSMTree::all(void) const {
-//     entry_t entry_buffer[buffer.num_entries];
-//     Enclosure *buffer_enclosure;
-//     MergeContext *merge_ctx;
-
-//     buffer_enclosure = new Enclosure();
-//     memcpy(entry_buffer, buffer.entries, buffer.num_entries * sizeof(entry_t));
-//     stable_sort(entry_buffer, &entry_buffer[buffer.num_entries]);
-//     assert(buffer_enclosure->put(entry_buffer, buffer.num_entries));
-
-//     merge_ctx = new MergeContext();
-//     merge_ctx->add(*buffer_enclosure);
-
-//     for (const auto& level : levels) {
-//         merge_ctx->add(level.enclosures);
-//     }
-
-//     return make_tuple(buffer_enclosure, merge_ctx);
-// }
-
-void LSMTree::stats(void) const {
+void LSMTree::stats(void) {
     // unsigned long total_pairs;
 
     /*
@@ -441,16 +427,25 @@ int main(int argc, char *argv[]) {
 
     while ((opt = getopt(argc, argv, "b:d:f:t:")) != -1) {
         switch (opt) {
-        case 'b' : buffer_num_pages = atoi(optarg); break;
-        case 'd' : depth = atoi(optarg); break;
-        case 'f' : fanout = atoi(optarg); break;
-        case 't' : num_threads = atoi(optarg); break;
-        default  : die("Usage: " + string(argv[0]) + " [-b buffer pages] [-d depth] [-f fanout] <[workload]");
+        case 'b':
+            buffer_num_pages = atoi(optarg);
+            break;
+        case 'd':
+            depth = atoi(optarg);
+            break;
+        case 'f':
+            fanout = atoi(optarg);
+            break;
+        case 't':
+            num_threads = atoi(optarg);
+            break;
+        default:
+            die("Usage: " + string(argv[0]) + " [-b buffer pages] [-d depth] [-f fanout] <[workload]");
         }
     }
 
     buffer_max_entries = buffer_num_pages * getpagesize() / sizeof(entry_t);
-    LSMTree tree = LSMTree(buffer_max_entries, depth, fanout, num_threads);
+    LSMTree tree(buffer_max_entries, depth, fanout, num_threads);
     command_loop(tree);
 
     return 0;
