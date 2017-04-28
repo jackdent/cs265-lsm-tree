@@ -1,5 +1,7 @@
 #include <vector>
 
+#include "buffer.h"
+#include "level.h"
 #include "spin_lock.h"
 #include "thread_pool.h"
 #include "types.h"
