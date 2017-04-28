@@ -21,9 +21,9 @@ public:
     Enclosure(int);
     ~Enclosure(void);
     int file_size(void) {return num_entries * sizeof(entry_t);}
-    void map(void);
+    vector<entry_t> * map(void);
     void unmap(void);
     VAL_t * get(KEY_t);
     vector<entry_t> * range(KEY_t, KEY_t);
-    void put(entry_t *, int);
+    void put(vector<entry_t>&);
 };

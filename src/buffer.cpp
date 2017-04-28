@@ -4,15 +4,39 @@
 
 using namespace std;
 
-bool Buffer::get(KEY_t key, VAL_t *val) const {
-    for (const auto& entry : entries) {
-        if (entry.key == key) {
-            *val = entry.val;
-            return true;
-        }
-    }
+VAL_t * Buffer::get(KEY_t key) const {
+    entry_t search_entry;
+    set<entry_t>::iterator entry;
+    VAL_t *val;
 
-    return false;
+    search_entry.key = key;
+    entry = entries.find(search_entry);
+
+    if (entry == entries.end()) {
+        return nullptr;
+    } else {
+        val = new VAL_t;
+        *val = entry->val;
+        return val;
+    }
+}
+
+vector<entry_t> * Buffer::get_all(void) const {
+    // TODO: don't want to copy set to buffer
+    return new vector<entry_t>(entries.begin(), entries.end());
+}
+
+vector<entry_t> * Buffer::range(KEY_t start, KEY_t end) const {
+    entry_t search_entry;
+    set<entry_t>::iterator subrange_start, subrange_end;
+
+    search_entry.key = start;
+    subrange_start = entries.lower_bound(search_entry);
+
+    search_entry.key = end;
+    subrange_end = entries.upper_bound(search_entry);
+
+    return new vector<entry_t>(subrange_start, subrange_end);
 }
 
 bool Buffer::put(KEY_t key, VAL_t val) {
@@ -23,9 +47,13 @@ bool Buffer::put(KEY_t key, VAL_t val) {
     } else {
         entry.key = key;
         entry.val = val;
-        entries.push_front(entry);
+        entries.insert(entry);
         return true;
     }
+}
+
+void Buffer::empty(void) {
+    entries.clear();
 }
 
 // void Buffer::dump(void) const {

@@ -31,14 +31,16 @@ bool Enclosure::range_overlaps_with(KEY_t start, KEY_t end) const {
     return start <= max_key && min_key <= end;
 };
 
-void Enclosure::map(void) {
-    if (mapping != nullptr) return;
+vector<entry_t> * Enclosure::map(void) {
+    if (mapping != nullptr) return mapping;
 
     mapping = new vector<entry_t>;
     mapping_fp = fopen(tmp_file.c_str(), "rb");
 
     mapping->reserve(num_entries);
     mmap(mapping->data(), file_size(), PROT_READ, MAP_PRIVATE, fileno(mapping_fp), 0);
+
+    return mapping;
 }
 
 void Enclosure::unmap(void) {
@@ -103,24 +105,23 @@ vector<entry_t> * Enclosure::range(KEY_t start, KEY_t end) {
     return subrange;
 }
 
-void Enclosure::put(entry_t *entries, int len) {
-    int i;
+void Enclosure::put(vector<entry_t>& entries) {
     FILE *fp;
 
-    assert(len > 0);
-    assert(num_entries + len <= max_entries);
+    assert(entries.size() > 0);
+    assert(num_entries + entries.size() <= max_entries);
 
-    num_entries += len;
+    num_entries += entries.size();
 
-    for (i = 0; i < num_entries; i++) {
-        bloom_filter.set(entries[i].key);
+    for (const auto& entry : entries) {
+        bloom_filter.set(entry.key);
     }
 
     // Inclusive bounds
-    min_key = min(entries[0].key, min_key);
-    max_key = max(entries[len - 1].key, max_key);
+    min_key = min(entries.front().key, min_key);
+    max_key = max(entries.back().key, max_key);
 
     fp = fopen(tmp_file.c_str(), "ab");
-    fwrite(entries, sizeof(entry_t), len, fp);
+    fwrite(&entries[0], sizeof(entry_t), entries.size(), fp);
     fclose(fp);
 }

@@ -15,7 +15,3 @@
 
 //     cout << endl;
 // }
-
-void Level::empty(void) {
-    enclosures.clear();
-}

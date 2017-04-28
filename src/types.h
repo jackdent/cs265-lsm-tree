@@ -14,6 +14,7 @@ typedef int32_t VAL_t;
 struct entry {
     KEY_t key;
     VAL_t val;
+    bool operator==(const entry& other) const {return key == other.key;}
     bool operator<(const entry& other) const {return key < other.key;}
     bool operator>(const entry& other) const {return key > other.key;}
 };
