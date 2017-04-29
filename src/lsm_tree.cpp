@@ -26,15 +26,15 @@ istream& operator>>(istream& stream, entry_t& entry) {
  */
 
 LSMTree::LSMTree(int buffer_max_entries, int depth, int fanout, int num_threads, float merge_ratio)
-    : buffer(buffer_max_entries), thread_pool(num_threads), merge_ratio(merge_ratio)
+    : buffer(buffer_max_entries), worker_pool(num_threads), merge_ratio(merge_ratio)
 {
     long max_run_size;
 
     max_run_size = buffer_max_entries;
 
     while ((depth--) > 0) {
-        max_run_size *= fanout;
         levels.emplace_back(fanout, max_run_size);
+        max_run_size *= fanout;
     }
 }
 
@@ -57,14 +57,10 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
      * recursively merge the next level downwards to create some
      */
 
-    if (current->runs.size() > next->remaining()) {
-        merge_down(current + 1);
-        assert(current->runs.size() <= next->remaining());
+    if (next->remaining() == 0) {
+        merge_down(next);
+        assert(next->remaining() > 0);
     }
-
-    /*
-     * Determine the number of runs to merge downwards
-     */
 
     merge_size = merge_ratio * current->max_runs;
 
@@ -72,14 +68,14 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
         merge_size = current->runs.size();
     }
 
-    for (i = 0; i < merge_size; i++) {
+    /*
+     * Merge the last "merge_size" runs in the current level
+     * into the first run in the next level
+     */
+
+    for (i = current->runs.size() - merge_size; i < merge_size; i++) {
         merge_ctx.add(current->runs[i].map(MappingType::Read));
     }
-
-    /*
-     * Add a new run to the next level and push "merge_size"
-     * runs downwards
-     */
 
     next->runs.emplace_front(next->max_run_size);
     next->runs.front().map(MappingType::Write);
@@ -99,7 +95,7 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
      * Unmap and delete the old (now redundant) entry files
      */
 
-    for (i = 0; i < merge_size; i++) {
+    for (i = current->runs.size() - merge_size; i < merge_size; i++) {
         current->runs[i].unmap();
     }
 
@@ -217,8 +213,8 @@ void LSMTree::get(KEY_t key) {
         }
     };
 
-    thread_pool.launch(search);
-    thread_pool.wait_all();
+    worker_pool.launch(search);
+    worker_pool.wait_all();
 
     if (latest_run >= 0 && latest_val != VAL_TOMBSTONE) cout << latest_val;
     cout << endl;
@@ -266,8 +262,8 @@ void LSMTree::range(KEY_t start, KEY_t end) {
         }
     };
 
-    thread_pool.launch(search);
-    thread_pool.wait_all();
+    worker_pool.launch(search);
+    worker_pool.wait_all();
 
     /*
      * Merge ranges and print keys

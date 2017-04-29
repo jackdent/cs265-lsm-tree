@@ -3,8 +3,8 @@
 #include "buffer.h"
 #include "level.h"
 #include "spin_lock.h"
-#include "thread_pool.h"
 #include "types.h"
+#include "worker_pool.h"
 
 #define DEFAULT_TREE_DEPTH 3
 #define DEFAULT_TREE_FANOUT 10
@@ -17,10 +17,10 @@
 
 class LSMTree {
     Buffer buffer;
-    ThreadPool thread_pool;
+    WorkerPool worker_pool;
     int num_threads;
     float merge_ratio;
-    std::vector<Level> levels;
+    vector<Level> levels;
     Run * get_run(int);
     void merge_down(vector<Level>::iterator);
 public:
