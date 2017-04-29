@@ -8,7 +8,11 @@
 
 using namespace std;
 
-class Enclosure {
+enum MappingType {
+    Read, Write
+};
+
+class Run {
     BloomFilter bloom_filter;
     KEY_t min_key, max_key;
     vector<entry_t> *mapping;
@@ -16,14 +20,13 @@ class Enclosure {
     bool key_in_range(KEY_t) const;
     bool range_overlaps_with(KEY_t, KEY_t) const;
 public:
-    int num_entries, max_entries;
+    long size, max_size;
     string tmp_file;
-    Enclosure(int);
-    ~Enclosure(void);
-    int file_size(void) {return num_entries * sizeof(entry_t);}
-    vector<entry_t> * map(void);
+    Run(long);
+    ~Run(void);
+    vector<entry_t> * map(MappingType);
     void unmap(void);
     VAL_t * get(KEY_t);
     vector<entry_t> * range(KEY_t, KEY_t);
-    void put(vector<entry_t>&);
+    void put(entry_t);
 };

@@ -18,11 +18,10 @@
 class LSMTree {
     Buffer buffer;
     ThreadPool thread_pool;
-    int enclosure_size;
     int num_threads;
     float merge_ratio;
     std::vector<Level> levels;
-    Enclosure * get_enclosure(int);
+    Run * get_run(int);
     void merge_down(vector<Level>::iterator);
 public:
     LSMTree(int, int, int, int, float);

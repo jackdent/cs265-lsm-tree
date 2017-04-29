@@ -21,11 +21,6 @@ VAL_t * Buffer::get(KEY_t key) const {
     }
 }
 
-vector<entry_t> * Buffer::get_all(void) const {
-    // TODO: don't want to copy set to buffer
-    return new vector<entry_t>(entries.begin(), entries.end());
-}
-
 vector<entry_t> * Buffer::range(KEY_t start, KEY_t end) const {
     entry_t search_entry;
     set<entry_t>::iterator subrange_start, subrange_end;
@@ -42,7 +37,7 @@ vector<entry_t> * Buffer::range(KEY_t start, KEY_t end) const {
 bool Buffer::put(KEY_t key, VAL_t val) {
     entry_t entry;
 
-    if (entries.size() == max_entries) {
+    if (entries.size() == max_size) {
         return false;
     } else {
         entry.key = key;

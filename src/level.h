@@ -1,12 +1,13 @@
 #include <queue>
 
-#include "enclosure.h"
+#include "run.h"
 
 class Level {
 public:
-    int max_enclosures;
-    std::deque<Enclosure> enclosures;
-    Level(int max_enclosures) : max_enclosures(max_enclosures) {}
-    bool remaining(void) const {return max_enclosures - enclosures.size();}
+    int max_runs;
+    long max_run_size;
+    std::deque<Run> runs;
+    Level(int n, long s) : max_runs(n), max_run_size(s) {}
+    bool remaining(void) const {return max_runs - runs.size();}
     // void dump(void) const;
 };

@@ -28,23 +28,21 @@ istream& operator>>(istream& stream, entry_t& entry) {
 LSMTree::LSMTree(int buffer_max_entries, int depth, int fanout, int num_threads, float merge_ratio)
     : buffer(buffer_max_entries), thread_pool(num_threads), merge_ratio(merge_ratio)
 {
-    int i, max_enclosures;
+    long max_run_size;
 
-    enclosure_size = buffer_max_entries;
-    max_enclosures = 1;
+    max_run_size = buffer_max_entries;
 
-    for (i = 1; i < depth; i++) {
-        max_enclosures *= fanout;
-        levels.emplace_back(max_enclosures);
+    while ((depth--) > 0) {
+        max_run_size *= fanout;
+        levels.emplace_back(fanout, max_run_size);
     }
 }
 
 void LSMTree::merge_down(vector<Level>::iterator current) {
     vector<Level>::iterator next;
     MergeContext merge_ctx;
-    vector<entry_t> entry_buffer;
     entry_t entry;
-    int merge_size, i, j;
+    int merge_size, i;
 
     assert(current >= levels.begin());
 
@@ -59,87 +57,98 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
      * recursively merge the next level downwards to create some
      */
 
-    if (current->enclosures.size() > next->remaining()) {
+    if (current->runs.size() > next->remaining()) {
         merge_down(current + 1);
-        assert(current->enclosures.size() <= next->remaining());
+        assert(current->runs.size() <= next->remaining());
     }
 
     /*
-     * The next level now has space for the current level, so we
-     * push "merge_size" enclosures downwards
+     * Determine the number of runs to merge downwards
      */
 
-    merge_size = merge_ratio * current->max_enclosures;
+    merge_size = merge_ratio * current->max_runs;
 
-    if (merge_size > current->enclosures.size()) {
-        merge_size = current->enclosures.size();
+    if (merge_size > current->runs.size()) {
+        merge_size = current->runs.size();
     }
 
     for (i = 0; i < merge_size; i++) {
-        merge_ctx.add(current->enclosures[i].map());
+        merge_ctx.add(current->runs[i].map(MappingType::Read));
     }
+
+    /*
+     * Add a new run to the next level and push "merge_size"
+     * runs downwards
+     */
+
+    next->runs.emplace_front(next->max_run_size);
+    next->runs.front().map(MappingType::Write);
 
     while (!merge_ctx.done()) {
-        entry_buffer.reserve(enclosure_size);
+        entry = merge_ctx.next();
 
-        for (j = 0; j < enclosure_size; j++) {
-            if (merge_ctx.done()) {
-                break;
-            } else {
-                entry = merge_ctx.next();
-
-                // We can remove deleted keys from the final level
-                if (!(next == levels.end() - 1 && entry.val == VAL_TOMBSTONE)) {
-                    entry_buffer.push_back(entry);
-                }
-            }
-
+        // We can remove deleted keys from the final level
+        if (!(next == levels.end() - 1 && entry.val == VAL_TOMBSTONE)) {
+            next->runs.front().put(entry);
         }
-
-        // Add a new enclosure to the next level
-        next->enclosures.emplace_front(enclosure_size);
-        next->enclosures.front().put(entry_buffer);
-
-        entry_buffer.empty();
     }
+
+    next->runs.front().unmap();
 
     /*
      * Unmap and delete the old (now redundant) entry files
      */
 
     for (i = 0; i < merge_size; i++) {
-        current->enclosures[i].unmap();
+        current->runs[i].unmap();
     }
 
-    current->enclosures.erase(current->enclosures.begin(), current->enclosures.begin() + merge_size);
+    current->runs.erase(current->runs.begin(), current->runs.begin() + merge_size);
 }
 
 void LSMTree::put(KEY_t key, VAL_t val) {
-    if (!buffer.put(key, val)) {
-        // Flush level 0 if necessary
-        if (levels.front().remaining() == 0) {
-            merge_down(levels.begin());
-        }
-
-        // Flush the buffer to level 0
-        vector<entry_t> *buffer_entries = buffer.get_all();
-        levels.front().enclosures.emplace_front(enclosure_size);
-        levels.front().enclosures.front().put(*buffer_entries);
-        delete buffer_entries;
-
-        // Empty the buffer and insert the key/value pair
-        buffer.empty();
-        assert(buffer.put(key, val));
+    if (buffer.put(key, val)) {
+        return;
     }
+
+    /*
+     * Flush level 0 if necessary
+     */
+
+    if (levels.front().remaining() == 0) {
+        merge_down(levels.begin());
+    }
+
+    /*
+     * Flush the buffer to level 0
+     */
+
+    assert(buffer.entries.size() == levels.front().max_run_size);
+
+    levels.front().runs.emplace_front(levels.front().max_run_size);
+    levels.front().runs.front().map(MappingType::Write);
+
+    for (const auto &entry : buffer.entries) {
+        levels.front().runs.front().put(entry);
+    }
+
+    levels.front().runs.front().unmap();
+
+    /*
+     * Empty the buffer and insert the key/value pair
+     */
+
+    buffer.empty();
+    assert(buffer.put(key, val));
 }
 
-Enclosure * LSMTree::get_enclosure(int index) {
+Run * LSMTree::get_run(int index) {
     for (const auto& level : levels) {
-        if (index < level.enclosures.size()) {
+        if (index < level.runs.size()) {
             // TODO: why do I need to cast from const?
-            return (Enclosure *) &level.enclosures[index];
+            return (Run *) &level.runs[index];
         } else {
-            index -= level.enclosures.size();
+            index -= level.runs.size();
         }
     }
 
@@ -149,7 +158,7 @@ Enclosure * LSMTree::get_enclosure(int index) {
 void LSMTree::get(KEY_t key) {
     VAL_t *buffer_val;
     VAL_t latest_val;
-    int latest_enclosure;
+    int latest_run;
     SpinLock lock;
     atomic<int> counter;
 
@@ -167,40 +176,35 @@ void LSMTree::get(KEY_t key) {
     }
 
     /*
-     * Search enclosures
+     * Search runs
      */
 
     counter = 0;
-    latest_enclosure = -1;
+    latest_run = -1;
 
     worker_task search = [&] {
-        int current_enclosure;
-        Enclosure *enclosure;
-        VAL_t *current_val;
+        int current_run = counter++;
+        Run *run = get_run(current_run);
 
-        current_enclosure = counter++;
-        enclosure = get_enclosure(current_enclosure);
-
-        if (enclosure == nullptr || (current_enclosure > latest_enclosure
-                                     && latest_enclosure > 0)) {
-            // If we have run out of enclosures, or if we have
-            // discovered a key in a more recent enclosure,
+        if (run == nullptr || (current_run > latest_run && latest_run > 0)) {
+            // If we have run out of runs, or if we have
+            // discovered a key in a more recent run,
             // stop searching.
             return;
         }
 
-        current_val = enclosure->get(key);
+        VAL_t *current_val = run->get(key);
 
         if (current_val != nullptr) {
-            // Search the current enclosure. If we find the key in
-            // the enclosure, update val if the enclosure is more
+            // Search the current run. If we find the key in
+            // the run, update val if the run is more
             // recent than the last. Then stop the search on this
-            // thread, since the next enclosure is guaranteed to
+            // thread, since the next run is guaranteed to
             // be less recent.
             lock.lock();
 
-            if (latest_enclosure < 0 || current_enclosure < latest_enclosure) {
-                latest_enclosure = current_enclosure;
+            if (latest_run < 0 || current_run < latest_run) {
+                latest_run = current_run;
                 latest_val = *current_val;
             }
 
@@ -216,7 +220,7 @@ void LSMTree::get(KEY_t key) {
     thread_pool.launch(search);
     thread_pool.wait_all();
 
-    if (latest_enclosure >= 0 && latest_val != VAL_TOMBSTONE) cout << latest_val;
+    if (latest_run >= 0 && latest_val != VAL_TOMBSTONE) cout << latest_val;
     cout << endl;
 }
 
@@ -243,28 +247,23 @@ void LSMTree::range(KEY_t start, KEY_t end) {
     ranges.insert({0, buffer.range(start, end)});
 
     /*
-     * Search enclosures
+     * Search runs
      */
 
     counter = 0;
 
     worker_task search = [&] {
-        int current_enclosure;
-        Enclosure *enclosure;
+        int current_run = counter++;
+        Run *run = get_run(current_run);
 
-        current_enclosure = counter++;
-        enclosure = get_enclosure(current_enclosure);
+        if (run != nullptr) {
+            lock.lock();
+            ranges.insert({current_run + 1, run->range(start, end)});
+            lock.unlock();
 
-        if (enclosure == nullptr) {
-            // No more enclosures to search
-            return;
+            // Potentially more runs to search
+            search();
         }
-
-        lock.lock();
-        ranges.insert({current_enclosure + 1, enclosure->range(start, end)});
-        lock.unlock();
-
-        search();
     };
 
     thread_pool.launch(search);
@@ -323,7 +322,7 @@ void LSMTree::stats(void) {
      * Tree stats
      */
 
-    // tie(buffer_enclosure, merge_ctx) = all();
+    // tie(buffer_run, merge_ctx) = all();
     // total_pairs = 0;
 
     // while (!merge_ctx->done()) {
@@ -360,6 +359,6 @@ void LSMTree::stats(void) {
     //  * Cleanup
     //  */
 
-    // delete buffer_enclosure;
+    // delete buffer_run;
     // delete merge_ctx;
 }
