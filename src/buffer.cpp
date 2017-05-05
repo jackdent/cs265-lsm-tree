@@ -50,16 +50,3 @@ bool Buffer::put(KEY_t key, VAL_t val) {
 void Buffer::empty(void) {
     entries.clear();
 }
-
-// void Buffer::dump(void) const {
-//     int i;
-//     entry_t entry;
-
-//     for (i = 0; i < num_entries; i++) {
-//         entry = *at(i);
-//         printf(DUMP_PATTERN, entry.key, entry.val);
-//         if (i < num_entries - 1) cout << " ";
-//     }
-
-//     cout << endl;
-// }

@@ -12,9 +12,6 @@
 #define DEFAULT_THREAD_COUNT 4
 #define DEFAULT_MERGE_RATIO 1.0
 
-#define DUMP_PATTERN "%d:%d"
-#define LEVEL_NUM_ENTRIES_PATTERN "LVL%d: %lu"
-
 class LSMTree {
     Buffer buffer;
     WorkerPool worker_pool;
@@ -30,5 +27,4 @@ public:
     void range(KEY_t, KEY_t);
     void del(KEY_t);
     void load(std::string);
-    void stats(void);
 };

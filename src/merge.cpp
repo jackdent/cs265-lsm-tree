@@ -3,11 +3,12 @@
 
 #include "merge.h"
 
-void MergeContext::add(vector<entry_t> *entries) {
+void MergeContext::add(entry_t *entries, long num_entries) {
     merge_entry_t merge_entry;
 
-    assert(entries->size() > 0);
+    assert(num_entries > 0);
     merge_entry.entries = entries;
+    merge_entry.num_entries = num_entries;
 
     queue.push(merge_entry);
 }
@@ -23,7 +24,7 @@ entry_t MergeContext::next(void) {
     while (next.head().key == current.head().key && !queue.empty()) {
         queue.pop();
 
-        next.index += 1;
+        next.index++;
         if (!next.done()) queue.push(next);
 
         next = queue.top();

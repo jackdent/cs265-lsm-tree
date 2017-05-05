@@ -42,9 +42,6 @@ void command_loop(LSMTree& tree) {
             // Trim quotes
             tree.load(file_path.substr(1, file_path.size() - 2));
             break;
-        case 's':
-            tree.stats();
-            break;
         default:
             die("Invalid command.");
         }

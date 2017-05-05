@@ -46,11 +46,13 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
 
     assert(current >= levels.begin());
 
-    if (current >= levels.end() - 1) {
-        die("No more space in buffer.");
+    if (current->runs.empty()) {
+        return;
+    } else if (current >= levels.end() - 1) {
+        die("No more space in tree.");
+    } else {
+        next = current + 1;
     }
-
-    next = current + 1;
 
     /*
      * If the next level does not have space for the current level,
@@ -62,53 +64,58 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
         assert(next->remaining() > 0);
     }
 
-    merge_size = merge_ratio * current->max_runs;
+    /*
+     * Add the first "merge_size" runs in the current level
+     * to the merge context
+     */
 
-    if (merge_size > current->runs.size()) {
-        merge_size = current->runs.size();
+    merge_size = merge_ratio * current->max_runs;
+    if (merge_size > current->runs.size()) merge_size = current->runs.size();
+
+    for (i = 0; i < merge_size; i++) {
+        merge_ctx.add(current->runs[i].map_read(), current->runs[i].size);
     }
 
     /*
-     * Merge the last "merge_size" runs in the current level
-     * into the first run in the next level
+     * Merge the context into the last run in the next level
      */
 
-    for (i = current->runs.size() - merge_size; i < merge_size; i++) {
-        merge_ctx.add(current->runs[i].map(MappingType::Read));
-    }
-
-    next->runs.emplace_front(next->max_run_size);
-    next->runs.front().map(MappingType::Write);
+    next->runs.emplace_back(next->max_run_size);
+    next->runs.back().map_write();
 
     while (!merge_ctx.done()) {
         entry = merge_ctx.next();
 
-        // We can remove deleted keys from the final level
+        // Remove deleted keys from the final level
         if (!(next == levels.end() - 1 && entry.val == VAL_TOMBSTONE)) {
-            next->runs.front().put(entry);
+            next->runs.back().put(entry);
         }
     }
 
-    next->runs.front().unmap();
+    next->runs.back().unmap_write();
 
     /*
-     * Unmap and delete the old (now redundant) entry files
+     * Unmap and delete the old (now redundant) entry files.
      */
 
-    for (i = current->runs.size() - merge_size; i < merge_size; i++) {
-        current->runs[i].unmap();
+    for (i = 0; i < merge_size; i++) {
+        current->runs[i].unmap_read();
     }
 
     current->runs.erase(current->runs.begin(), current->runs.begin() + merge_size);
 }
 
 void LSMTree::put(KEY_t key, VAL_t val) {
+    /*
+     * Try inserting the key into the buffer
+     */
+
     if (buffer.put(key, val)) {
         return;
     }
 
     /*
-     * Flush level 0 if necessary
+     * If the buffer is full, then flush level 0 if necessary
      */
 
     if (levels.front().remaining() == 0) {
@@ -119,16 +126,14 @@ void LSMTree::put(KEY_t key, VAL_t val) {
      * Flush the buffer to level 0
      */
 
-    assert(buffer.entries.size() == levels.front().max_run_size);
+    levels.front().runs.emplace_back(levels.front().max_run_size);
+    levels.front().runs.back().map_write();
 
-    levels.front().runs.emplace_front(levels.front().max_run_size);
-    levels.front().runs.front().map(MappingType::Write);
-
-    for (const auto &entry : buffer.entries) {
-        levels.front().runs.front().put(entry);
+    for (const auto& entry : buffer.entries) {
+        levels.front().runs.back().put(entry);
     }
 
-    levels.front().runs.front().unmap();
+    levels.front().runs.back().unmap_write();
 
     /*
      * Empty the buffer and insert the key/value pair
@@ -141,8 +146,8 @@ void LSMTree::put(KEY_t key, VAL_t val) {
 Run * LSMTree::get_run(int index) {
     for (const auto& level : levels) {
         if (index < level.runs.size()) {
-            // TODO: why do I need to cast from const?
-            return (Run *) &level.runs[index];
+            // The latest runs are at the back
+            return (Run *) &level.runs[level.runs.size() - index - 1];
         } else {
             index -= level.runs.size();
         }
@@ -179,24 +184,24 @@ void LSMTree::get(KEY_t key) {
     latest_run = -1;
 
     worker_task search = [&] {
-        int current_run = counter++;
-        Run *run = get_run(current_run);
+        int current_run;
+        Run *run;
+        VAL_t *current_val;
 
-        if (run == nullptr || (current_run > latest_run && latest_run > 0)) {
-            // If we have run out of runs, or if we have
-            // discovered a key in a more recent run,
-            // stop searching.
+        current_run = counter++;
+
+        if (latest_run >= 0 || (run = get_run(current_run)) == nullptr) {
+            // Stop search if we discovered a key in another run, or
+            // if there are no more runs to search
             return;
-        }
-
-        VAL_t *current_val = run->get(key);
-
-        if (current_val != nullptr) {
-            // Search the current run. If we find the key in
-            // the run, update val if the run is more
-            // recent than the last. Then stop the search on this
-            // thread, since the next run is guaranteed to
-            // be less recent.
+        } else if ((current_val = run->get(key)) == nullptr) {
+            // Couldn't find the key in the current run, so we need
+            // to keep searching.
+            search();
+        } else {
+            // Update val if the run is more recent than the
+            // last, then stop searching since there's no need
+            // to search later runs.
             lock.lock();
 
             if (latest_run < 0 || current_run < latest_run) {
@@ -205,11 +210,7 @@ void LSMTree::get(KEY_t key) {
             }
 
             lock.unlock();
-
             delete current_val;
-        } else {
-            // Keep searching until we find an entry.
-            search();
         }
     };
 
@@ -249,15 +250,17 @@ void LSMTree::range(KEY_t start, KEY_t end) {
     counter = 0;
 
     worker_task search = [&] {
-        int current_run = counter++;
-        Run *run = get_run(current_run);
+        int current_run;
+        Run *run;
 
-        if (run != nullptr) {
+        current_run = counter++;
+
+        if ((run = get_run(current_run)) != nullptr) {
             lock.lock();
             ranges.insert({current_run + 1, run->range(start, end)});
             lock.unlock();
 
-            // Potentially more runs to search
+            // Potentially more runs to search.
             search();
         }
     };
@@ -270,7 +273,7 @@ void LSMTree::range(KEY_t start, KEY_t end) {
      */
 
     for (const auto& range : ranges) {
-        merge_ctx.add(range.second);
+        merge_ctx.add(range.second->data(), range.second->size());
     }
 
     while (!merge_ctx.done()) {
@@ -309,52 +312,4 @@ void LSMTree::load(string file_path) {
     } else {
         die("Could not locate file '" + file_path + "'.");
     }
-}
-
-void LSMTree::stats(void) {
-    // unsigned long total_pairs;
-
-    /*
-     * Tree stats
-     */
-
-    // tie(buffer_run, merge_ctx) = all();
-    // total_pairs = 0;
-
-    // while (!merge_ctx->done()) {
-    //     merge_ctx->next();
-    //     total_pairs++;
-    // }
-
-    // cout << "Total pairs: " << total_pairs << endl;
-
-    /*
-     * TODO: Level stats
-     */
-
-    // printf(LEVEL_NUM_ENTRIES_PATTERN, 0, buffer.num_entries);
-
-    // for (i = 0; i < levels.size(); i++) {
-    //     cout << ", ";
-    //     printf(LEVEL_NUM_ENTRIES_PATTERN, i + 1, levels[i]->num_entries);
-    // }
-
-    // cout << endl;
-
-    /*
-     * Level dumps
-     */
-
-    // buffer.dump();
-
-    // for (const auto& level : levels) {
-    //     level.dump();
-    // }
-
-    // /*
-    //  * Cleanup
-    //  */
-
-    // delete buffer_run;
-    // delete merge_ctx;
 }

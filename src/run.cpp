@@ -1,5 +1,10 @@
 #include <cassert>
+#include <cstdio>
+#include <fcntl.h>
+#include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "run.h"
 
@@ -16,11 +21,11 @@ Run::Run(long max_size) : max_size(max_size) {
     tmp_file = mktemp(tmp_fn);
 
     mapping = nullptr;
-    mapping_fp = nullptr;
+    mapping_fd = -1;
 }
 
 Run::~Run(void) {
-    unmap();
+    assert(mapping == nullptr);
     remove(tmp_file.c_str());
 }
 
@@ -32,39 +37,99 @@ bool Run::range_overlaps_with(KEY_t start, KEY_t end) const {
     return start <= max_key && min_key <= end;
 };
 
-vector<entry_t> * Run::map(MappingType type) {
-    if (mapping != nullptr) return mapping;
+entry_t * Run::map_read(void) {
+    assert(mapping == nullptr);
 
-    mapping = new vector<entry_t>;
+    mapping_fd = open(tmp_file.c_str(), O_RDONLY);
+    assert(mapping_fd != -1);
 
-    if (type == MappingType::Read) {
-        mapping_fp = fopen(tmp_file.c_str(), "rb");
-        mapping->reserve(size);
-        mmap(mapping->data(), size * sizeof(entry_t), PROT_READ, MAP_PRIVATE, fileno(mapping_fp), 0);
-    } else {
-        mapping_fp = fopen(tmp_file.c_str(), "wb");
-        mapping->reserve(max_size);
-        mmap(mapping->data(), max_size * sizeof(entry_t), PROT_WRITE, MAP_PRIVATE, fileno(mapping_fp), 0);
-    }
+    mapping = (entry_t *)mmap(0, file_size(), PROT_READ, MAP_PRIVATE, mapping_fd, 0);
+    assert(mapping != MAP_FAILED);
 
     return mapping;
 }
 
-void Run::unmap(void) {
-    if (mapping == nullptr) return;
+entry_t * Run::map_write(void) {
+    assert(mapping == nullptr);
+    int result;
 
-    munmap(mapping->data(), mapping->capacity() * sizeof(entry_t));
-    delete mapping;
-    fclose(mapping_fp);
+    mapping_fd = open(tmp_file.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0600);
+    assert(mapping_fd != -1);
+
+    // Set the file to the appropriate length
+    result = lseek(mapping_fd, file_size() - 1, SEEK_SET);
+    assert(result != -1);
+    result = write(mapping_fd, "", 1);
+    assert(result != -1);
+
+    mapping = (entry_t *)mmap(0, file_size(), PROT_WRITE, MAP_PRIVATE, mapping_fd, 0);
+    assert(mapping != MAP_FAILED);
+
+    return mapping;
+}
+
+void Run::unmap(long mapping_size) {
+    assert(mapping != nullptr);
+
+    munmap(mapping, file_size());
+    close(mapping_fd);
 
     mapping = nullptr;
-    mapping_fp = nullptr;
+    mapping_fd = -1;
+}
+
+void Run::unmap_read(void) {
+    unmap(size);
+}
+
+void Run::unmap_write(void) {
+    unmap(max_size);
+}
+
+long Run::lower_bound(KEY_t key) {
+    assert(mapping != nullptr);
+
+    long low, high, mid;
+
+    low = 0;
+    high = size;
+
+    while (low < high) {
+        mid = low + (high - low) / 2;
+        if (key <= mapping[mid].key) {
+            high = mid;
+        } else {
+            low = mid + 1;
+        }
+    }
+
+    return low;
+}
+
+long Run::upper_bound(KEY_t key) {
+    assert(mapping != nullptr);
+
+    long low, high, mid;
+
+    low = 0;
+    high = size;
+
+    while (low < high) {
+        mid = low + (high - low) / 2;
+        if (key >= mapping[mid].key) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+
+    return low;
 }
 
 VAL_t * Run::get(KEY_t key) {
     VAL_t *val;
+    long search_index;
     entry_t search_entry;
-    vector<entry_t>::iterator search_iterator;
 
     val = nullptr;
 
@@ -72,25 +137,23 @@ VAL_t * Run::get(KEY_t key) {
         return val;
     }
 
-    map(MappingType::Read);
+    map_read();
 
-    search_entry.key = key;
-    search_iterator = lower_bound(mapping->begin(), mapping->end(), search_entry);
+    search_index = lower_bound(key);
 
-    if (search_iterator->key == key) {
+    if (search_index < size && mapping[search_index].key == key) {
         val = new VAL_t;
-        *val = search_iterator->val;
+        *val = mapping[search_index].val;
     }
 
-    unmap();
+    unmap_read();
 
     return val;
 }
 
 vector<entry_t> * Run::range(KEY_t start, KEY_t end) {
     vector<entry_t> *subrange;
-    entry_t search_entry;
-    vector<entry_t>::iterator subrange_start, subrange_end;
+    long subrange_start, subrange_end;
 
     subrange = new vector<entry_t>;
 
@@ -98,32 +161,28 @@ vector<entry_t> * Run::range(KEY_t start, KEY_t end) {
         return subrange;
     }
 
-    map(MappingType::Read);
+    map_read();
 
-    search_entry.key = start;
-    subrange_start = lower_bound(mapping->begin(), mapping->end(), search_entry);
+    subrange_start = lower_bound(start);
+    subrange_end = upper_bound(end);
 
-    search_entry.key = end;
-    subrange_end = upper_bound(mapping->begin(), mapping->end(), search_entry);
+    if (subrange_start < subrange_end) {
+        subrange->reserve(subrange_end - subrange_start);
+        subrange->assign(&mapping[subrange_start], &mapping[subrange_end]);
+    }
 
-    assert(subrange_start <= subrange_end);
-
-    subrange->reserve(distance(subrange_start, subrange_end));
-    subrange->assign(subrange_start, subrange_end);
-
-    unmap();
+    unmap_read();
 
     return subrange;
 }
 
 void Run::put(entry_t entry) {
-    assert(mapping != nullptr);
-    assert(size <= max_size);
+    assert(size < max_size);
 
     bloom_filter.set(entry.key);
     min_key = min(entry.key, min_key);
     max_key = max(entry.key, max_key);
 
-    mapping->push_back(entry);
-    size += 1;
+    mapping[size] = entry;
+    size++;
 }

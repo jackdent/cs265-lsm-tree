@@ -17,3 +17,15 @@ void WorkerPool::wait_all(void) {
 
     futures.clear();
 }
+
+void DynamicWorkerPool::launch(worker_task& task) {
+    for (int i = 0; i < workers.size(); i++) {
+        workers.emplace_back(task);
+    }
+}
+
+void DynamicWorkerPool::wait_all(void) {
+    for (auto& worker : workers) {
+        worker.join();
+    }
+}
