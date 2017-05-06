@@ -36,13 +36,23 @@ vector<entry_t> * Buffer::range(KEY_t start, KEY_t end) const {
 
 bool Buffer::put(KEY_t key, VAL_t val) {
     entry_t entry;
+    set<entry_t>::iterator it;
+    bool found;
 
     if (entries.size() == max_size) {
         return false;
     } else {
         entry.key = key;
         entry.val = val;
-        entries.insert(entry);
+
+        tie(it, found) = entries.insert(entry);
+
+        // Update the entry if it already exists
+        if (found == false) {
+            entries.erase(it);
+            entries.insert(entry);
+        }
+
         return true;
     }
 }

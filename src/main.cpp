@@ -50,13 +50,11 @@ void command_loop(LSMTree& tree) {
 
 int main(int argc, char *argv[]) {
     int opt, buffer_num_pages, buffer_max_entries, depth, fanout, num_threads;
-    float merge_ratio;
 
     buffer_num_pages = DEFAULT_BUFFER_NUM_PAGES;
     depth = DEFAULT_TREE_DEPTH;
     fanout = DEFAULT_TREE_FANOUT;
     num_threads = DEFAULT_THREAD_COUNT;
-    merge_ratio = DEFAULT_MERGE_RATIO;
 
     while ((opt = getopt(argc, argv, "b:d:f:t:m:")) != -1) {
         switch (opt) {
@@ -72,22 +70,18 @@ int main(int argc, char *argv[]) {
         case 't':
             num_threads = atoi(optarg);
             break;
-        case 'm':
-            merge_ratio = atof(optarg);
-            break;
         default:
             die("Usage: " + string(argv[0]) + " "
                 "[-b number of pages in buffer] "
                 "[-d number of levels] "
                 "[-f level fanout] "
                 "[-t number of threads] "
-                "[-m level merge ratio] "
                 "<[workload]");
         }
     }
 
     buffer_max_entries = buffer_num_pages * getpagesize() / sizeof(entry_t);
-    LSMTree tree(buffer_max_entries, depth, fanout, num_threads, merge_ratio);
+    LSMTree tree(buffer_max_entries, depth, fanout, num_threads);
     command_loop(tree);
 
     return 0;

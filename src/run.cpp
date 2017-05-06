@@ -43,7 +43,7 @@ entry_t * Run::map_read(void) {
     mapping_fd = open(tmp_file.c_str(), O_RDONLY);
     assert(mapping_fd != -1);
 
-    mapping = (entry_t *)mmap(0, file_size(), PROT_READ, MAP_PRIVATE, mapping_fd, 0);
+    mapping = (entry_t *)mmap(0, file_size(), PROT_READ, MAP_SHARED, mapping_fd, 0);
     assert(mapping != MAP_FAILED);
 
     return mapping;
@@ -62,7 +62,7 @@ entry_t * Run::map_write(void) {
     result = write(mapping_fd, "", 1);
     assert(result != -1);
 
-    mapping = (entry_t *)mmap(0, file_size(), PROT_WRITE, MAP_PRIVATE, mapping_fd, 0);
+    mapping = (entry_t *)mmap(0, file_size(), PROT_WRITE, MAP_SHARED, mapping_fd, 0);
     assert(mapping != MAP_FAILED);
 
     return mapping;

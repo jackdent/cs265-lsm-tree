@@ -9,6 +9,7 @@ void MergeContext::add(entry_t *entries, long num_entries) {
     assert(num_entries > 0);
     merge_entry.entries = entries;
     merge_entry.num_entries = num_entries;
+    merge_entry.precedence = queue.size();
 
     queue.push(merge_entry);
 }
@@ -24,7 +25,7 @@ entry_t MergeContext::next(void) {
     while (next.head().key == current.head().key && !queue.empty()) {
         queue.pop();
 
-        next.index++;
+        next.current_index++;
         if (!next.done()) queue.push(next);
 
         next = queue.top();

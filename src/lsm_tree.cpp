@@ -25,8 +25,8 @@ istream& operator>>(istream& stream, entry_t& entry) {
  * LSM Tree
  */
 
-LSMTree::LSMTree(int buffer_max_entries, int depth, int fanout, int num_threads, float merge_ratio)
-    : buffer(buffer_max_entries), worker_pool(num_threads), merge_ratio(merge_ratio)
+LSMTree::LSMTree(int buffer_max_entries, int depth, int fanout, int num_threads)
+    : buffer(buffer_max_entries), worker_pool(num_threads)
 {
     long max_run_size;
 
@@ -42,11 +42,10 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
     vector<Level>::iterator next;
     MergeContext merge_ctx;
     entry_t entry;
-    int merge_size, i;
 
     assert(current >= levels.begin());
 
-    if (current->runs.empty()) {
+    if (current->remaining() > 0) {
         return;
     } else if (current >= levels.end() - 1) {
         die("No more space in tree.");
@@ -65,44 +64,38 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
     }
 
     /*
-     * Add the first "merge_size" runs in the current level
-     * to the merge context
+     * Merge all runs in the current level into the first
+     * run in the next level
      */
 
-    merge_size = merge_ratio * current->max_runs;
-    if (merge_size > current->runs.size()) merge_size = current->runs.size();
+    next->runs.emplace_front(next->max_run_size);
+    next->runs.front().map_write();
 
-    for (i = 0; i < merge_size; i++) {
-        merge_ctx.add(current->runs[i].map_read(), current->runs[i].size);
+    for (auto& run : current->runs) {
+        merge_ctx.add(run.map_read(), run.size);
     }
-
-    /*
-     * Merge the context into the last run in the next level
-     */
-
-    next->runs.emplace_back(next->max_run_size);
-    next->runs.back().map_write();
 
     while (!merge_ctx.done()) {
         entry = merge_ctx.next();
 
         // Remove deleted keys from the final level
         if (!(next == levels.end() - 1 && entry.val == VAL_TOMBSTONE)) {
-            next->runs.back().put(entry);
+            next->runs.front().put(entry);
         }
     }
 
-    next->runs.back().unmap_write();
-
-    /*
-     * Unmap and delete the old (now redundant) entry files.
-     */
-
-    for (i = 0; i < merge_size; i++) {
-        current->runs[i].unmap_read();
+    for (auto& run : current->runs) {
+        run.unmap_read();
     }
 
-    current->runs.erase(current->runs.begin(), current->runs.begin() + merge_size);
+    next->runs.front().unmap_write();
+
+    /*
+     * Clear the current level to delete the old (now
+     * redundant) entry files.
+     */
+
+    current->runs.clear();
 }
 
 void LSMTree::put(KEY_t key, VAL_t val) {
@@ -115,25 +108,24 @@ void LSMTree::put(KEY_t key, VAL_t val) {
     }
 
     /*
-     * If the buffer is full, then flush level 0 if necessary
+     * If the buffer is full, flush level 0 if necessary
+     * to create space
      */
 
-    if (levels.front().remaining() == 0) {
-        merge_down(levels.begin());
-    }
+    merge_down(levels.begin());
 
     /*
      * Flush the buffer to level 0
      */
 
-    levels.front().runs.emplace_back(levels.front().max_run_size);
-    levels.front().runs.back().map_write();
+    levels.front().runs.emplace_front(levels.front().max_run_size);
+    levels.front().runs.front().map_write();
 
     for (const auto& entry : buffer.entries) {
-        levels.front().runs.back().put(entry);
+        levels.front().runs.front().put(entry);
     }
 
-    levels.front().runs.back().unmap_write();
+    levels.front().runs.front().unmap_write();
 
     /*
      * Empty the buffer and insert the key/value pair
@@ -146,8 +138,7 @@ void LSMTree::put(KEY_t key, VAL_t val) {
 Run * LSMTree::get_run(int index) {
     for (const auto& level : levels) {
         if (index < level.runs.size()) {
-            // The latest runs are at the back
-            return (Run *) &level.runs[level.runs.size() - index - 1];
+            return (Run *) &level.runs[index];
         } else {
             index -= level.runs.size();
         }

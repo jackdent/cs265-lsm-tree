@@ -1,14 +1,16 @@
-\documentclass[format=acmtog, review=false]{acmart}
+\documentclass{acm}
 
 \begin{document}
 
-\title{CS 265 Project: Log-Structured Merge Tree}
-\author{Jack Dent}
-\email{jdent@college.harvard.edu}
+\title{Log-Structured Merge Tree}
+\subtitle{CS 265 Final Project, Spring '17}
+\author{Jack Dent\\\email{jdent@college.harvard.edu}}
+
 \maketitle
 
-\section{abstract}
-I present the design for a single-threaded Log-Structured Merge Tree (LSM Tree), as well as an implementation in C++. I show preliminary experimental results that suggest a buffer size of roughly 4MB optimises the throughput of the LSM Tree, and that increasing the buffer size does not yield additional benefits. Finally, I outline my design proposal for improving the write performance of the LSM Tree by splitting each level into a series of ``enclosures'', and the overall performance by leveraging parallelism.
+\begin{abstract}
+I present the design for a parallelised Log-Structured Merge Tree (LSM Tree), as well as an implementation in C++. 
+\end{abstract}
 
 \section{Basic Design}
 

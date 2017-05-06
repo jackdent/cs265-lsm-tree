@@ -21,7 +21,7 @@ class LSMTree {
     Run * get_run(int);
     void merge_down(vector<Level>::iterator);
 public:
-    LSMTree(int, int, int, int, float);
+    LSMTree(int, int, int, int);
     void put(KEY_t, VAL_t);
     void get(KEY_t);
     void range(KEY_t, KEY_t);
