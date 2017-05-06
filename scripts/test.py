@@ -9,6 +9,7 @@ LSM_TREE_EXECUTABLE = os.path.join(ROOT_DIR, "bin", "lsm")
 TEST_DIR_PREFIX = "test-"
 INFILE = "in"
 OUTFILE = "out"
+PARAMFILE = "params"
 SEPARATOR = "-" * 80
 
 def run_test(test_dir):
@@ -16,7 +17,12 @@ def run_test(test_dir):
     os.chdir(test_dir)
 
     with open(INFILE, 'r') as infile, open(OUTFILE, 'r') as outfile, TemporaryFile('r') as dump:
-        subprocess.call([LSM_TREE_EXECUTABLE], stdin=infile, stdout=dump)
+        try:
+            params = open(PARAMFILE, 'r').read().rstrip().split(' ')
+        except:
+            params = []
+
+        subprocess.call([LSM_TREE_EXECUTABLE] + params, stdin=infile, stdout=dump)
         dump.seek(0)
 
         expected, obtained = outfile.read(), dump.read()
