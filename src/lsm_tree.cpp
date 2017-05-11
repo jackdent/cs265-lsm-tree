@@ -25,8 +25,11 @@ istream& operator>>(istream& stream, entry_t& entry) {
  * LSM Tree
  */
 
-LSMTree::LSMTree(int buffer_max_entries, int depth, int fanout, int num_threads)
-    : buffer(buffer_max_entries), worker_pool(num_threads)
+LSMTree::LSMTree(int buffer_max_entries, int depth, int fanout,
+                 int num_threads, float bf_bits_per_entry) :
+                 bf_bits_per_entry(bf_bits_per_entry),
+                 buffer(buffer_max_entries),
+                 worker_pool(num_threads)
 {
     long max_run_size;
 
@@ -68,12 +71,12 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
      * run in the next level
      */
 
-    next->runs.emplace_front(next->max_run_size);
-    next->runs.front().map_write();
-
     for (auto& run : current->runs) {
         merge_ctx.add(run.map_read(), run.size);
     }
+
+    next->runs.emplace_front(next->max_run_size, bf_bits_per_entry);
+    next->runs.front().map_write();
 
     while (!merge_ctx.done()) {
         entry = merge_ctx.next();
@@ -84,11 +87,11 @@ void LSMTree::merge_down(vector<Level>::iterator current) {
         }
     }
 
-    for (auto& run : current->runs) {
-        run.unmap_read();
-    }
+    next->runs.front().unmap();
 
-    next->runs.front().unmap_write();
+    for (auto& run : current->runs) {
+        run.unmap();
+    }
 
     /*
      * Clear the current level to delete the old (now
@@ -118,14 +121,14 @@ void LSMTree::put(KEY_t key, VAL_t val) {
      * Flush the buffer to level 0
      */
 
-    levels.front().runs.emplace_front(levels.front().max_run_size);
+    levels.front().runs.emplace_front(levels.front().max_run_size, bf_bits_per_entry);
     levels.front().runs.front().map_write();
 
     for (const auto& entry : buffer.entries) {
         levels.front().runs.front().put(entry);
     }
 
-    levels.front().runs.front().unmap_write();
+    levels.front().runs.front().unmap();
 
     /*
      * Empty the buffer and insert the key/value pair
@@ -263,8 +266,8 @@ void LSMTree::range(KEY_t start, KEY_t end) {
      * Merge ranges and print keys
      */
 
-    for (const auto& range : ranges) {
-        merge_ctx.add(range.second->data(), range.second->size());
+    for (const auto& kv : ranges) {
+        merge_ctx.add(kv.second->data(), kv.second->size());
     }
 
     while (!merge_ctx.done()) {

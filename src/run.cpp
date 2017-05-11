@@ -10,12 +10,14 @@
 
 using namespace std;
 
-Run::Run(long max_size) : max_size(max_size) {
+Run::Run(long max_size, float bf_bits_per_entry) :
+         max_size(max_size),
+         bloom_filter(max_size / bf_bits_per_entry)
+{
     char *tmp_fn;
 
     size = 0;
-    min_key = KEY_MIN;
-    max_key = KEY_MAX;
+    fence_pointers.reserve(max_size / getpagesize());
 
     tmp_fn = strdup(TMP_FILE_PATTERN);
     tmp_file = mktemp(tmp_fn);
@@ -29,23 +31,22 @@ Run::~Run(void) {
     remove(tmp_file.c_str());
 }
 
-bool Run::key_in_range(KEY_t key) const {
-    return key >= min_key && key <= max_key;
-}
-
-bool Run::range_overlaps_with(KEY_t start, KEY_t end) const {
-    return start <= max_key && min_key <= end;
-};
-
-entry_t * Run::map_read(void) {
+entry_t * Run::map_read(size_t len, off_t offset) {
     assert(mapping == nullptr);
+
+    mapping_length = len;
 
     mapping_fd = open(tmp_file.c_str(), O_RDONLY);
     assert(mapping_fd != -1);
 
-    mapping = (entry_t *)mmap(0, file_size(), PROT_READ, MAP_SHARED, mapping_fd, 0);
+    mapping = (entry_t *)mmap(0, mapping_length, PROT_READ, MAP_SHARED, mapping_fd, offset);
     assert(mapping != MAP_FAILED);
 
+    return mapping;
+}
+
+entry_t * Run::map_read(void) {
+    map_read(max_size * sizeof(entry_t), 0);
     return mapping;
 }
 
@@ -53,125 +54,104 @@ entry_t * Run::map_write(void) {
     assert(mapping == nullptr);
     int result;
 
+    mapping_length = max_size * sizeof(entry_t);
+
     mapping_fd = open(tmp_file.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0600);
     assert(mapping_fd != -1);
 
     // Set the file to the appropriate length
-    result = lseek(mapping_fd, file_size() - 1, SEEK_SET);
+    result = lseek(mapping_fd, mapping_length - 1, SEEK_SET);
     assert(result != -1);
     result = write(mapping_fd, "", 1);
     assert(result != -1);
 
-    mapping = (entry_t *)mmap(0, file_size(), PROT_WRITE, MAP_SHARED, mapping_fd, 0);
+    mapping = (entry_t *)mmap(0, mapping_length, PROT_WRITE, MAP_SHARED, mapping_fd, 0);
     assert(mapping != MAP_FAILED);
 
     return mapping;
 }
 
-void Run::unmap(long mapping_size) {
+void Run::unmap(void) {
     assert(mapping != nullptr);
 
-    munmap(mapping, file_size());
+    munmap(mapping, mapping_length);
     close(mapping_fd);
 
     mapping = nullptr;
+    mapping_length = 0;
     mapping_fd = -1;
 }
 
-void Run::unmap_read(void) {
-    unmap(size);
-}
-
-void Run::unmap_write(void) {
-    unmap(max_size);
-}
-
-long Run::lower_bound(KEY_t key) {
-    assert(mapping != nullptr);
-
-    long low, high, mid;
-
-    low = 0;
-    high = size;
-
-    while (low < high) {
-        mid = low + (high - low) / 2;
-        if (key <= mapping[mid].key) {
-            high = mid;
-        } else {
-            low = mid + 1;
-        }
-    }
-
-    return low;
-}
-
-long Run::upper_bound(KEY_t key) {
-    assert(mapping != nullptr);
-
-    long low, high, mid;
-
-    low = 0;
-    high = size;
-
-    while (low < high) {
-        mid = low + (high - low) / 2;
-        if (key >= mapping[mid].key) {
-            low = mid + 1;
-        } else {
-            high = mid;
-        }
-    }
-
-    return low;
-}
-
 VAL_t * Run::get(KEY_t key) {
+    vector<KEY_t>::iterator next_page;
+    long page_index;
     VAL_t *val;
-    long search_index;
-    entry_t search_entry;
+    int i;
 
     val = nullptr;
 
-    if (!key_in_range(key) || !bloom_filter.is_set(key)) {
+    if (key < fence_pointers[0] || key > max_key || !bloom_filter.is_set(key)) {
         return val;
     }
 
-    map_read();
+    next_page = upper_bound(fence_pointers.begin(), fence_pointers.end(), key);
+    page_index = (next_page - fence_pointers.begin()) - 1;
+    assert(page_index >= 0);
 
-    search_index = lower_bound(key);
+    map_read(getpagesize(), page_index * getpagesize());
 
-    if (search_index < size && mapping[search_index].key == key) {
-        val = new VAL_t;
-        *val = mapping[search_index].val;
+    for (i = 0; i < getpagesize() / sizeof(entry_t); i++) {
+        if (mapping[i].key == key) {
+            val = new VAL_t;
+            *val = mapping[i].val;
+        }
     }
 
-    unmap_read();
+    unmap();
 
     return val;
 }
 
 vector<entry_t> * Run::range(KEY_t start, KEY_t end) {
     vector<entry_t> *subrange;
-    long subrange_start, subrange_end;
+    vector<KEY_t>::iterator next_page;
+    long subrange_page_start, subrange_page_end, num_pages, num_entries, i;
 
     subrange = new vector<entry_t>;
 
-    if (!range_overlaps_with(start, end)) {
+    // If the ranges don't overlap, return an empty vector
+    if (start > max_key || fence_pointers[0] > end) {
         return subrange;
     }
 
-    map_read();
-
-    subrange_start = lower_bound(start);
-    subrange_end = upper_bound(end);
-
-    if (subrange_start < subrange_end) {
-        subrange->reserve(subrange_end - subrange_start);
-        subrange->assign(&mapping[subrange_start], &mapping[subrange_end]);
+    if (start < fence_pointers[0]) {
+        subrange_page_start = 0;
+    } else {
+        next_page = upper_bound(fence_pointers.begin(), fence_pointers.end(), start);
+        subrange_page_start = (next_page - fence_pointers.begin()) - 1;
     }
 
-    unmap_read();
+    if (end > max_key) {
+        subrange_page_end = fence_pointers.size();
+    } else {
+        next_page = upper_bound(fence_pointers.begin(), fence_pointers.end(), end);
+        subrange_page_end = next_page - fence_pointers.begin();
+    }
+
+    assert(subrange_page_start < subrange_page_end);
+    num_pages = subrange_page_end - subrange_page_start;
+    map_read(num_pages * getpagesize(), subrange_page_start * getpagesize());
+
+    num_entries = num_pages * getpagesize() / sizeof(entry_t);
+    subrange->reserve(num_entries);
+
+    for (i = 0; i < num_entries; i++) {
+        if (start <= mapping[i].key && mapping[i].key <= end) {
+            subrange->push_back(mapping[i]);
+        }
+    }
+
+    unmap();
 
     return subrange;
 }
@@ -180,7 +160,13 @@ void Run::put(entry_t entry) {
     assert(size < max_size);
 
     bloom_filter.set(entry.key);
-    min_key = min(entry.key, min_key);
+
+    if (size % getpagesize() == 0) {
+        fence_pointers.push_back(entry.key);
+    }
+
+    // Set a final fence pointer to establish an upper
+    // bound on the last page range.
     max_key = max(entry.key, max_key);
 
     mapping[size] = entry;

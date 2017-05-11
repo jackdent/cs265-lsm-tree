@@ -6,12 +6,12 @@
 void MergeContext::add(entry_t *entries, long num_entries) {
     merge_entry_t merge_entry;
 
-    assert(num_entries > 0);
-    merge_entry.entries = entries;
-    merge_entry.num_entries = num_entries;
-    merge_entry.precedence = queue.size();
-
-    queue.push(merge_entry);
+    if (num_entries > 0) {
+        merge_entry.entries = entries;
+        merge_entry.num_entries = num_entries;
+        merge_entry.precedence = queue.size();
+        queue.push(merge_entry);
+    }
 }
 
 entry_t MergeContext::next(void) {

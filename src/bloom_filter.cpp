@@ -16,7 +16,7 @@ uint64_t BloomFilter::hash_1(KEY_t k) const {
     key = key * 2057;
     key = key ^ (key>>16);
 
-    return key % BLOOM_FILTER_SIZE;
+    return key % table.size();
 }
 
 uint64_t BloomFilter::hash_2(KEY_t k) const {
@@ -30,7 +30,7 @@ uint64_t BloomFilter::hash_2(KEY_t k) const {
     key = (key+0xfd7046c5) + (key<<3);
     key = (key^0xb55a4f09) ^ (key>>16);
 
-    return key % BLOOM_FILTER_SIZE;
+    return key % table.size();
 }
 
 uint64_t BloomFilter::hash_3(KEY_t k) const {
@@ -43,7 +43,7 @@ uint64_t BloomFilter::hash_3(KEY_t k) const {
     key = key * 0x27d4eb2d;
     key = key ^ (key>>15);
 
-    return key % BLOOM_FILTER_SIZE;
+    return key % table.size();
 }
 
 void BloomFilter::set(KEY_t key) {
