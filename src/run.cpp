@@ -12,7 +12,7 @@ using namespace std;
 
 Run::Run(long max_size, float bf_bits_per_entry) :
          max_size(max_size),
-         bloom_filter(max_size / bf_bits_per_entry)
+         bloom_filter(max_size * bf_bits_per_entry)
 {
     char *tmp_fn;
 
