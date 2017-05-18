@@ -14,7 +14,7 @@
 \titlespacing*{\subsection}{0pt}{1em}{1em}
 \titlespacing*{\subsubsection}{0pt}{1em}{1em}
 
-\title{Write-Optimised Log-Structured Merge Tree}
+\title{Log-Structured Merge Tree}
 \subtitle{CS 265 Final Project, Spring '17}
 \author{Jack Dent\\\email{jdent@college.harvard.edu}}
 
@@ -23,7 +23,7 @@
 \maketitle
 
 \begin{abstract}
-This work presents the design a write-optimised Log-Structured Merge Tree (LSM Tree), which serves as a standalone key-value store, as well as an implementation in C++. Various parameters give users given fine grained control over the tradeoff between the store's read and write throughput, and lookup query parallelisation allows the store to increase the saturation of available hardware, thereby improving performance. Experimental results show that the store is able to achieve a write throughput of 250K and a read throughput of 50K on the test machine for a set of commonly used parameter values.
+This work presents the design of a Log-Structured Merge Tree (LSM Tree), which serves as a standalone key-value store, as well as an implementation in C++. Various parameters give users given fine grained control over the tradeoff between the store's read and write throughput, and a number of optimisation as well as query parallelisation allow the store to increase the saturation of available hardware to optimise performance. Experimental results show that the store is able to achieve a write throughput of up to 300K and a read throughput of 30K on the test infrastructure.
 \end{abstract}
 
 \section{Introduction}
@@ -31,6 +31,8 @@ This work presents the design a write-optimised Log-Structured Merge Tree (LSM T
 The LSM Tree has seen increasing adoption as an industry standard for modern key-value stores, both as standalone products and as components in larger database management systems (DBMSs). Facebook's RocksDB, Google's LevelDB, and Amazon's Dynamo are prominent examples of standalone key value stores that depend on LSM Trees as their primary storage layer. SQLite4, meanwhile, dropped the B-tree in favour of the LSM Tree as the main table store. By avoiding in-place updates and instead buffering all writes in main-memory, the LSM Tree vastly improves write throughput by amortising costly roundtrips to and from secondary storage over very many write operations. When the main-memory buffer becomes full, the LSM Tree flushes its entire contents to secondary storage. On disk, the LSM Tree stores a number of levels, each of which contain a number of ``runs'' whose size increases in proportion to the level depth. To increase the performance of point and range queries, the LSM Tree stores a number of auxiliary data structures in main-memory for each run. Bloom filters allow point queries to avoid searching runs that are known to not contain the search key. Fence pointers, meanwhile, establish bounds on the the subranges in run pages, allowing point and range queries to avoid having to read inconsequential pages into main-memory.
 
 This paper presents the design and implementation of a parallelised LSM Tree that allows application users to control the tradeoff between read and write throughput by tuning the following parameters during initialization:
+
+\pagebreak
 
 \begin{enumerate}
 \item \textbf{Buffer size, $b$:} controls the number of pages in the main-memory buffer, and therefore also affects the size of runs on secondary storage. Defaults to 1000, which gives the buffer a size of 4MB.
@@ -56,7 +58,7 @@ LSM Tree implementations can be divided into two categories based on their choic
 
 \subsubsection{Runs}
 
-I opted to build a write-optimised LSM Tree, and therefore opted to implement the tiering merge policy. In my design, a ``level'' holds a time-ordered collection of ``runs'' stored in a \texttt{std::deque}. A ``run'' is an in-memory data structure that holds a pointer to a file stored on disk, a fixed-size bloom filter, and fence pointers. The file stores a number of entries in ascending order, sorted by key. In the case of a crash, the store can recreate the bloom filter and the fence pointers for all runs from the entries on disk, although any entries in the buffer that have not been checkpointed will be lost. Every level contains a maximum of $f$ runs at any one time, and the maximum size of each run at level $l$ (in pages) is bounded by $O(bf^l)$. A run is not guaranteed to contain the maximum number of entries since the merge procedure removes duplicates, but runs in the same level will all have approximately the same size. The store never updates existing runs in place.
+I opted to build a write-optimised LSM Tree, and therefore decided to implement the tiering merge policy. In my design, a ``level'' holds a time-ordered collection of ``runs'' stored in a \texttt{std::deque}. A ``run'' is an in-memory data structure that holds a pointer to a file stored on disk, a fixed-size bloom filter, and fence pointers. The file stores a number of entries in ascending order, sorted by key. In the case of a crash, the store can recreate the bloom filter and the fence pointers for all runs from the entries on disk, although any entries in the buffer that have not been checkpointed will be lost. Every level contains a maximum of $f$ runs at any one time, and the maximum size of each run at level $l$ (in pages) is bounded by $O(bf^l)$. A run is not guaranteed to contain the maximum number of entries since the merge procedure removes duplicates, but runs in the same level will all have approximately the same size. The store never updates existing runs in place.
 
 \subsubsection{Run ordering}
 
@@ -134,7 +136,7 @@ To search for a key in a single run, the store first checks that the key is pres
 
 To model the cost of GET queries, we first note that querying a missing key will require a full search over every level of the tree and that as such, worst case performance will be fairly common under many workloads. Thus, we model the complexity of GET queries by assuming a probe to every run.
 
-Searching a run for a key takes at most one read I/O cost due to the fence pointers, and since each level contains $f$ runs, the total I/O cost of searching run $l$ is $O(f)$. However, the store only performs an unnecessary read I/O if the bloom fitler probe returns a false positive, since it stops the search as soon as it finds a run that run actually contains the entry. If we assume a constant false positive rate $\phi$ across all bloom filters, which can be tuned by the bits per entry parameter $r$, we only perform $O(\phi \cdot f)$ unnecessary read I/Os per level in the worst case. As such, the worst case I/O cost of searching all levels is $O\left(\phi \cdot f \cdot d\right)$. After $n$ writes, the tree has depth at most $\log_f(n/b)$, which implies the lookup complexity is $O(\phi \cdot f \cdot \log_f(n/b))$. Thus, the lookup cost increases as $f$ increases, and when $f=n/b$, the lookup cost becomes $\phi \cdot n/b$.
+Searching a run for a key takes at most one read I/O cost due to the fence pointers, and since each level contains $f$ runs, the total I/O cost of searching run $l$ is $O(f)$. However, the store only performs an unnecessary read I/O if the bloom fitler probe returns a false positive, since it stops the search as soon as it finds a run that run actually contains the entry. If we assume a constant false positive rate $\phi$ across all bloom filters, which can be tuned by the bits per entry parameter $r$, we only perform $O(\phi \cdot f)$ unnecessary read I/Os per level in the worst case. As such, the worst case I/O cost of searching all levels is $O\left(\phi \cdot f \cdot d\right)$. After $n$ writes, the tree has depth at most $\log_f(n/b)$, which implies the lookup complexity is $O(\phi \cdot f \cdot \log_f(n/b))$. Thus, the lookup cost increases as $f$ increases, and when $f=n/b$, the lookup cost becomes $O(\phi \cdot n/b)$.
 
 \subsubsection{Parallelisation}
 
@@ -162,7 +164,7 @@ The procedure then loops over the runs in order, building a subrange \texttt{vec
 
 The cost of RANGE queries depends entirely on the parameter values for the start and end keys. For example when the start key is minimised and the end key is maximised, the store will have to perform a read I/O for every single page in the tree to collect all the values.
 
-Assuming that the start key is $k_s$ and the end key is $k_s + \Delta$, the range can span at most $ \frac{e \cdot \Delta}{p}$, and the store will thus read at most $O(\frac{e \cdot \Delta}{p})$ pages to find the subrange for a given run. The total I/O cost of searching a level is therefore $O(f \cdot frac{e \cdot \Delta}{p})$. It follows that the complexity of RANGE queries is $O(d \cdot f \cdot frac{e \cdot \Delta}{p})$. When $\Delta < p$, the page size, the complexity equals that of a point query scaled by a factor of $\phi$, since the only difference between the queries is in the use of bloom filters.
+Assuming that the start key is $k_s$ and the end key is $k_s + \Delta$, the range can span at most $ \frac{e \cdot \Delta}{p}$, and the store will thus read at most $O(\frac{e \cdot \Delta}{p})$ pages to find the subrange for a given run. The total I/O cost of searching a level is therefore $O(f \cdot \frac{e \cdot \Delta}{p})$. It follows that the complexity of RANGE queries is $O(d \cdot f \cdot \frac{e \cdot \Delta}{p})$. When $\Delta < p$, the page size, the complexity equals that of a point query scaled by a factor of $\phi$, since the only difference between the queries is in the use of bloom filters.
 
 \subsubsection{Parallelisation}
 
@@ -180,13 +182,36 @@ LOAD queries stream a binary file of key/value pairs, inserting each into the st
 
 \subsection{Thread pool}
 
-A ``thread pool'' is a reusable pool of kernel threads. We use a threadpool for parallelisation so that we do not have to create a new set of threads for each query. The number of threads in the threadpool is denoted $t$ and should be tuned to optimal value for the hardware, which will often be the number of cores on the machine.
+A ``thread pool'', a reusable pool of kernel threads, removes the overhead of creating a new set of threads after each query. The number of threads in the threadpool should be tuned to optimal value for the hardware, which will often be proportional the number of cores on the machine. The implementation used a condition variable to wake up kernel threads when new work is pushed onto the queue. For high saturation workloads, an alternative thread pool implementation could make use of \texttt{thread::yield} instead to prevent threads from sleeping between queries, although in this case cores would always be at 100\% CPU utilisation.
 
 \subsection{mmap}
 
-TODO
+In independent experiments, \texttt{mmap} proved to be faster than the C++ \texttt{ifstream} and \texttt{ofstream} file abstractions both for sequential and random access. I therefore implemented \texttt{mmap} for every read and write I/O operation. Since the fence pointers imply that all I/Os will be page aligned, \texttt{mmap} was also a natural match.
+
+Additionally, \texttt{mmap} demonstrated exceptional performance when I experimented with reducing the fence pointer to page ratio to save space in main-memory. When fence pointers refer to a collection of pages rather than just a single page, the most efficient way to find a key inside a page range is to perform a binary search over the disk pages. \texttt{mmap} proved to be an order of magnitude faster for randomly accessing pages than issuing separate \texttt{lseek} system calls during the binary search.
 
 \section{Experimental results}
+
+All experiments were run on a machine with a 2.8 GHz Intel Core I7 processors 16 GB of 1600 MHZ DDR3 random access memory, and 500 GB of SSD secondary storage. All experiments were run with a minimum workload size of 10,000,000 queries, and the observed values for read and write througput were calculated from a workload size of 100,000,000 queries.
+
+\subsection{Effect of workload distribution on throughput}
+
+\begin{table}[t]
+\centering
+\begin{tabular}{c|c|c|}
+\cline{2-3}
+\multicolumn{1}{l|}{} & \multicolumn{2}{c|}{\textbf{Distribution}} \\ \cline{2-3} 
+ & \textbf{Uniform} & \textbf{Gaussian} \\ \hline
+\multicolumn{1}{|c|}{\textbf{Read throughput}} & 28K & 43K \\ \hline
+\multicolumn{1}{|c|}{\textbf{Write throughput}} & 305K & 314K \\ \hline
+\end{tabular}
+\caption{Read and write for an LSM Tree with $b = 1000$, $t = 4$, and $f = 10$.}
+\vspace{-2em}
+\end{table}
+
+Over a uniform workload of 100,000,000 queries with $b = 1000$, $t = 4$, and $f = 10$, the store demonstrated a write throughput of 305,000 entries per second for PUT queries, and a read throughput of 28,000 entries per second for GET queries. For a workload with Gaussian distributions, the write throughput rose slightly. Since PUT queries overwrite existing keys in the buffer, the buffer is flushed less often under a Gaussian workload. Additionally, fewer entries need to be written to disk when merging runs, which improves the write performance. The read throughput rose by a factor of roughly 1.5X, since GET queries are more likely to find entries in earlier levels in the tree, thus preventing deeper searches.
+
+Using an external skip list implementation, the write throughput doubled to approximately 600,000 entries per second, while the read throughput rose very slightly under Gaussian workloads. Further profiling confirmed that the buffer \texttt{std::set} implementation was a significant bottleneck on write performance for large values of $b$, since the \texttt{std::set} spends a lot of time rebalancing the search tree. When the buffer is small, the cost of write I/Os dominates the main-memory insertion costs. When $b=1000$, on the other hand, the buffer contains three orders of magnitude more entries than can be written in a single write I/O, and therefore becomes a bottleneck on throughput.
 
 \begin{figure}
 \centering
@@ -194,20 +219,31 @@ TODO
 \caption{Effect of level fanout on PUT query throughput when $b=1$}
 \end{figure}
 
-Following parameters used: $b = 100$; $t = 4$; $f = 10$.
-
 \subsection{Effect of varying $f$}
+
+Figure 2 shows the effect of varying the parameter $f$ over a uniform workload with $b = 1000$. As predicted by the models, increasing the level fanout causes an increase in write throughput up to a fanout of around $f=30$, at which point the write throughput levels off. A similar effect was evident across a wide range of buffer sizes.
 
 \subsection{Effect of varying $r$}
 
-\subsection{Thread pool}
+Figure 3 shows the effect of varying the parameter $r$ over a uniform workload with $b = 100$ and $f = 1000$. Setting such a large fanout ensured that all entries were written to the first level, and thus isolated the effects of varying the bloom filter size. When $r=0.5$, the bloom filter size for each run is roughly 3KB since the runs in the first level all contain a maximum of 51,200 entries, which is two order magnitudes smaller than the file size. When $r=8$, the bloom filter size is approximately 50KB, which is only order of magnitude smaller than the file size.
 
+As predicted by the models, increasing the bloom filter size increases the read throughput. Whereas the read throughput is only 10K entries per second when $r=0.5$ over a uniform workload with a cache miss ratio of 0.5, the throughput more than doubles to 25K when $r=8.0$.
 
-% Figure 1 depicts how the performance characteristics of a number of different workloads vary according to the buffer size. I tested a number of different workloads with various distrubutions for each page size, and then averaged the time taken to complete the workload. The time axis is logarithmic.
+\begin{figure}
+\centering
+\includegraphics[width=3.33in]{bfratio}
+\caption{Effect of bloom filte size on GET query throughput when $b=100$ and $f=1000$}
+\end{figure}
+
 
 \section{Conclusion and future work}
 
-- Implement skip list; buffer is bottleneck
-- Checkpointing buffer without a full cascading merge -- just persist entire buffer to disk
+This paper presented the design for a Log-Structure Merge Tree, a standalone key-value store that has demonstrated high write throughput. The LSM Tree in this paper used a merging policy of \textit{tiering} to optimise the store for write throughput, but also gave users fine grained control over the tradeoff between read and write performance through various initializatoin parameters. The experimental section confirmed that users could vary the throughput characteristics of the tree by varying the level fanout parameter, $f$, and the bloom filter ratio parameter, $r$, according to the expected workload distribution.
+
+The LSM Tree made a number of optimisations to improve both read and write throughput simultaneously, thereby shifting the entire throughput Pareto curve towards the origin. Parallelisation of GET and RANGE queries increased the throughput in proportion to the number of threads for both types of operation, up to the optimal thread limit for the given hardware. Likewise, using \texttt{mmap} rather than C++ file streams doubled the performance of both read and write I/O operations, which increased the throughput of GET, RANGE and PUT queries.
+
+Future work should experiment with making further optimisations to the buffer data structure. The skip list implementation already demonstrated that the choice of main-memory data structure can have a significant affect on write throughput and with further optimisations, the LSM Tree shows great promise of achieving a throughput of up to one million entries per second for uniform workload distributions, and up to two million entries per second for skewed workload distributions.
+
+Concurrency could further increase the performance of the both GET and PUT queries. Batching GET queries together could result in significant performance improvements for skewed workloads by combining and thus reducing the number of required secondary storage read I/Os. A background merge daemon could vastly increase the performance of PUT queries by proactively clearing space in the higher levels during GET and RANGE queries, such that fewer levels need to be merged during PUT queries. As a final optimisation, the C++ implementation should integrate the highly performant thread pool from Facebook's folly/wangle libraries to reduce parallelisation overhead.
 
 \end{document}
